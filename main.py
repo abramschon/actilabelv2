@@ -41,6 +41,7 @@ ANNOTATION_COLORS = [
 ANNOTATION_TEXT_COLOR = hex_to_rgb("#FFFFFF") # White
 DEFAULT_ALPHA = 0.7 # Slightly less alpha might look better on dark theme
 FPS = 60
+SELECTED_CHANNEL_COLOR = hex_to_rgb("#323842")  # Slightly lighter than background
 
 class TimeScale:
     """Manages time scale conversions between datetime and pixel coordinates."""
@@ -1031,7 +1032,7 @@ class Channel:
         
         # Draw channel background
         if self.selected:
-            pygame.draw.rect(surface, HIGHLIGHT_COLOR, self.rect)
+            pygame.draw.rect(surface, SELECTED_CHANNEL_COLOR, self.rect)
         else:
             pygame.draw.rect(surface, GRID_COLOR, self.rect, 1)
         
