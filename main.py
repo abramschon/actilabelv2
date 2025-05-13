@@ -267,6 +267,10 @@ class AnnotationChannel:
             surface.blit(text, (rect.centerx - text.get_width() // 2, rect.centery - text.get_height() // 2))
             return
             
+        # Calculate annotation height (leave some margin at top and bottom)
+        annotation_height = rect.height - 20  # 10px margin top and bottom
+        annotation_y = rect.top + 10  # Start 10px from top
+        
         # Draw each annotation as a colored rectangle
         for annotation in visible_annotations:
             # Convert times to unit scale
@@ -285,20 +289,21 @@ class AnnotationChannel:
             color = self.color_map.get(annotation.label, TEXT_COLOR)
             
             # Draw the rectangle with alpha blending
-            s = pygame.Surface((x2 - x1, rect.height - 10))
+            width = max(1, x2 - x1)  # Ensure width is at least 1
+            s = pygame.Surface((width, annotation_height))
             s.set_alpha(int(DEFAULT_ALPHA * 255))
             s.fill(color)
-            surface.blit(s, (x1, rect.top + 5))
+            surface.blit(s, (x1, annotation_y))
             
             # Draw border
-            pygame.draw.rect(surface, color, (x1, rect.top + 5, x2 - x1, rect.height - 10), 1)
+            pygame.draw.rect(surface, color, (x1, annotation_y, width, annotation_height), 1)
             
             # Draw label text if there's enough space
-            if x2 - x1 > 30:
+            if width > 30:
                 font = pygame.font.SysFont("Helvetica Neue", 14) # Reduced size
                 # Use the dedicated ANNOTATION_TEXT_COLOR for readability
                 text = font.render(annotation.label, True, ANNOTATION_TEXT_COLOR) 
-                text_x = x1 + (x2 - x1) // 2 - text.get_width() // 2
+                text_x = x1 + (width // 2) - text.get_width() // 2
                 text_y = rect.centery - text.get_height() // 2
                 
                 # Draw the text directly (no background rectangle needed with good contrast)
@@ -307,7 +312,7 @@ class AnnotationChannel:
                 # Draw tiny indicator (maybe less necessary now, but keep for very small segments)
                 # Ensure indicator color contrasts with background
                 indicator_color = ANNOTATION_TEXT_COLOR # Use white indicator
-                pygame.draw.rect(surface, indicator_color, (x1, rect.top + 5, max(1, x2 - x1), 3), 0)
+                pygame.draw.rect(surface, indicator_color, (x1, rect.top + 5, max(1, width), 3), 0)
 
 class DataSource:
     """Base class for different data sources."""
@@ -993,7 +998,7 @@ class Channel:
                 # For thumbnail channel, use thumbnail height plus margins
                 return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
         elif self.annotation_channel:
-            return self.min_annotation_height
+            return max(self.min_annotation_height, 100)  # Ensure minimum height for annotation channels
         else:
             return self.min_content_height
     
@@ -1573,7 +1578,6 @@ class AnnotationTool:
             pygame.K_l: self._handle_l,
             pygame.K_r: self._handle_r,
             pygame.K_c: self._handle_c,  # Add 'c' key for changing labels
-            # pygame.K_f: self._handle_fullscreen  # Remove 'f' key for toggling fullscreen
         }
         
         # Set up state
@@ -1613,6 +1617,18 @@ class AnnotationTool:
         if not os.path.exists(self.annotation_dir):
             os.makedirs(self.annotation_dir)
             self.logger.info(f"Created annotation directory: {self.annotation_dir}")
+            
+        # Add key state tracking for continuous scrolling
+        self.key_states = {
+            pygame.K_LEFT: False,
+            pygame.K_RIGHT: False
+        }
+        self.scroll_speed = 0.0001  # Very slow initial speed
+        self.scroll_acceleration = 0.00006  # Gentle acceleration
+        self.current_scroll_speed = self.scroll_speed  # Current scroll speed
+        self.max_scroll_speed = 0.15  # Maximum scroll speed
+        self.last_scroll_time = pygame.time.get_ticks()  # For timing scroll updates
+        self.key_press_time = {}  # Track when each key was pressed
     
     def _update_layout(self, width, height):
         """Recalculate UI component positions and sizes based on window dimensions."""
@@ -1944,8 +1960,8 @@ class AnnotationTool:
             return
             
         if self.editing_annotation and self.editing_edge and self.time_scale:
-            # Calculate time delta based on current view (smaller increment for finer control)
-            time_delta = self.time_scale.to_scale(0.02) - self.time_scale.to_scale(0)
+            # Calculate time delta based on current scroll speed
+            time_delta = self.time_scale.to_scale(self.current_scroll_speed) - self.time_scale.to_scale(0)
             
             # Move the selected edge left
             if self.editing_edge == 'left':
@@ -1956,7 +1972,7 @@ class AnnotationTool:
                 # Check if new position would be off screen
                 if new_unit < 0:
                     # If would go off screen, move timeline instead
-                    self.time_scale.pan(0.02)
+                    self.time_scale.pan(self.current_scroll_speed)
                     return
                     
                 # Ensure start time doesn't go beyond timeline start or end time
@@ -1971,7 +1987,7 @@ class AnnotationTool:
                 # Check if new position would be off screen
                 if new_unit < 0:
                     # If would go off screen, move timeline instead
-                    self.time_scale.pan(0.02)
+                    self.time_scale.pan(self.current_scroll_speed)
                     return
                     
                 # Ensure end time stays after start time
@@ -1981,7 +1997,7 @@ class AnnotationTool:
         else:
             # Regular timeline panning
             if self.time_scale:
-                self.time_scale.pan(0.1)
+                self.time_scale.pan(self.current_scroll_speed)
     
     def _handle_right(self):
         """Handle right arrow key."""
@@ -1989,8 +2005,8 @@ class AnnotationTool:
             return
             
         if self.editing_annotation and self.editing_edge and self.time_scale:
-            # Calculate time delta based on current view (smaller increment for finer control)
-            time_delta = self.time_scale.to_scale(0.02) - self.time_scale.to_scale(0)
+            # Calculate time delta based on current scroll speed
+            time_delta = self.time_scale.to_scale(self.current_scroll_speed) - self.time_scale.to_scale(0)
             
             # Move the selected edge right
             if self.editing_edge == 'left':
@@ -2001,7 +2017,7 @@ class AnnotationTool:
                 # Check if new position would be off screen
                 if new_unit > 1:
                     # If would go off screen, move timeline instead
-                    self.time_scale.pan(-0.02)
+                    self.time_scale.pan(-self.current_scroll_speed)
                     return
                     
                 # Ensure start time stays before end time
@@ -2016,7 +2032,7 @@ class AnnotationTool:
                 # Check if new position would be off screen
                 if new_unit > 1:
                     # If would go off screen, move timeline instead
-                    self.time_scale.pan(-0.02)
+                    self.time_scale.pan(-self.current_scroll_speed)
                     return
                     
                 # Ensure end time doesn't go beyond timeline end
@@ -2026,7 +2042,7 @@ class AnnotationTool:
         else:
             # Regular timeline panning
             if self.time_scale:
-                self.time_scale.pan(-0.1)
+                self.time_scale.pan(-self.current_scroll_speed)
     
     def _handle_up(self):
         """Handle up arrow key."""
@@ -2337,6 +2353,11 @@ class AnnotationTool:
                 
                 # Handle keyboard events
                 elif event.type == pygame.KEYDOWN:
+                    # Update key states for continuous scrolling
+                    if event.key in self.key_states:
+                        self.key_states[event.key] = True
+                        self.current_scroll_speed = self.scroll_speed  # Reset to initial slow speed on each press
+                    
                     # First try label editor
                     if self.label_editor.active:
                         if self.label_editor.handle_event(event):
@@ -2358,6 +2379,40 @@ class AnnotationTool:
                     
                     if not self.label_editor.active and self.channel_view.handle_event(event):
                         continue
+                
+                # Handle key up events for continuous scrolling
+                elif event.type == pygame.KEYUP:
+                    if event.key in self.key_states:
+                        self.key_states[event.key] = False
+                        self.current_scroll_speed = self.scroll_speed  # Reset speed when key is released
+            
+            # Handle continuous scrolling
+            current_time = pygame.time.get_ticks()
+            dt = current_time - self.last_scroll_time
+            self.last_scroll_time = current_time
+            
+            if not self.label_editor.active and self.time_scale:
+                # Update scroll speed based on how long the key has been held
+                if self.key_states[pygame.K_LEFT] or self.key_states[pygame.K_RIGHT]:
+                    # Gradually increase speed while key is held
+                    self.current_scroll_speed = min(
+                        self.max_scroll_speed,
+                        self.current_scroll_speed + (self.scroll_acceleration * dt)
+                    )
+                else:
+                    self.current_scroll_speed = self.scroll_speed
+                
+                # Apply scrolling
+                if self.key_states[pygame.K_LEFT]:
+                    if self.editing_annotation and self.editing_edge:
+                        self._handle_left()  # Use existing edge adjustment logic
+                    else:
+                        self.time_scale.pan(self.current_scroll_speed)
+                elif self.key_states[pygame.K_RIGHT]:
+                    if self.editing_annotation and self.editing_edge:
+                        self._handle_right()  # Use existing edge adjustment logic
+                    else:
+                        self.time_scale.pan(-self.current_scroll_speed)
             
             # Render
             self.screen.fill(BACKGROUND_COLOR)
