@@ -12,7 +12,13 @@ def parse_timestamp_from_filename(filename):
     """Extract timestamp from ELSA image filename format."""
     # Example filename: B...._..._20211109_072834E.JPG
     try:
-        timestamp_str = filename.split('_')[-2] + filename.split('_')[-1].split('.')[0]
+        # Split by underscore and get the last two parts
+        parts = filename.split('_')
+        date_part = parts[-2]  # 20211109
+        time_part = parts[-1].split('.')[0]  # 072834E
+        # Remove the 'E' suffix from the time part
+        time_part = time_part[:6]  # 072834
+        timestamp_str = date_part + time_part
         return datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
     except:
         return None
