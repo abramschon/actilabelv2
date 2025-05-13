@@ -138,9 +138,18 @@ def create_example_dataset():
     # Create data sources
     data_sources = [
         ImageDataSource(
-            "Camera",
+            "Preview",
             image_times,
-            image_paths
+            image_paths,
+            thumbnail_size=(640, 300),
+            max_images_in_view=1,
+        ),
+        ImageDataSource(
+            "Thumbnail",
+            image_times,
+            image_paths,
+            thumbnail_size=(320, 150),
+            max_images_in_view=10,
         ),
         VectorDataSource(
             "Accelerometer",

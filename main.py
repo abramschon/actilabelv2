@@ -985,11 +985,13 @@ class Channel:
         if self.collapsed:
             return self.header_height  # Only show header when collapsed
         elif isinstance(self.data_source, ImageDataSource):
-            # Preview channel (max_images_in_view == 1) gets more height
+            # Calculate height based on thumbnail size and aspect ratio
             if self.data_source.max_images_in_view == 1:
-                return 400  # Larger height for preview
+                # For preview channel, use full thumbnail height plus margins
+                return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
             else:
-                return 200  # Smaller height for thumbnails
+                # For thumbnail channel, use thumbnail height plus margins
+                return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
         elif self.annotation_channel:
             return self.min_annotation_height
         else:
@@ -1241,6 +1243,14 @@ class ChannelView:
             # Draw scrollbar thumb
             pygame.draw.rect(surface, HIGHLIGHT_COLOR,
                            (scrollbar_x, scrollbar_y, self.scrollbar_width, scrollbar_height))
+
+    def add_channel(self, channel: Channel) -> None:
+        """Add a channel to the view."""
+        self.channels.append(channel)
+        # If this is the first channel, select it
+        if len(self.channels) == 1:
+            self.selected_channel = channel
+            channel.selected = True
 
 
 class LabelEditor:
