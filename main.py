@@ -472,12 +472,17 @@ class VectorDataSource(DataSource):
 class ImageDataSource(DataSource):
     """A data source for images over time."""
     
-    def __init__(self, name: str, times: np.ndarray, image_paths: List[str], thumbnail_size: Tuple[int, int] = (100, 100)):
+    def __init__(self, 
+                 name: str, 
+                 times: np.ndarray, 
+                 image_paths: List[str], 
+                 thumbnail_size: Tuple[int, int] = (100, 100),
+                 max_images_in_view: int = 10):
         super().__init__(name)
         self.times = times
         self.image_paths = image_paths
         self.thumbnail_size = thumbnail_size
-        self.max_images_in_view = 10  # Maximum number of images to show at once
+        self.max_images_in_view = max_images_in_view  # Maximum number of images to show at once
         
         # Load and cache thumbnails (limit initial load to avoid startup delay)
         self.thumbnails = {}
@@ -542,12 +547,25 @@ class ImageDataSource(DataSource):
             surface.blit(text, (rect.centerx - text.get_width() // 2, rect.centery - text.get_height() // 2))
             return
             
-        # Downsample visible images if there are too many
-        if len(visible_indices) > self.max_images_in_view:
-            step = len(visible_indices) // self.max_images_in_view
-            display_indices = visible_indices[::step][:self.max_images_in_view]
-        else:
-            display_indices = visible_indices
+        # Get center time (cursor position)
+        center_time = time_scale.to_scale(0.5)
+        
+        # Handle preview vs thumbnail display
+        if self.max_images_in_view == 1:  # Preview channel
+            # Find the image closest to center time
+            if len(visible_indices) > 0:
+                time_diffs = np.abs(self.times[visible_indices] - center_time)
+                closest_idx = visible_indices[np.argmin(time_diffs)]
+                display_indices = [closest_idx]
+            else:
+                display_indices = visible_indices
+        else:  # Thumbnail channel
+            # Downsample visible images if there are too many
+            if len(visible_indices) > self.max_images_in_view:
+                step = len(visible_indices) // self.max_images_in_view
+                display_indices = visible_indices[::step][:self.max_images_in_view]
+            else:
+                display_indices = visible_indices
         
         # Calculate layout
         img_margin = 5
@@ -557,9 +575,15 @@ class ImageDataSource(DataSource):
                        (rect.width - (len(display_indices) + 1) * img_margin) // len(display_indices))
         img_height = int(img_width * self.thumbnail_size[1] / self.thumbnail_size[0])
         
-        # Calculate evenly spaced x positions for images
-        spacing = (rect.width - img_width) / (len(display_indices) - 1) if len(display_indices) > 1 else 0
-        image_positions = [rect.left + i * spacing for i in range(len(display_indices))]
+        # Calculate x positions for images
+        if len(display_indices) == 1:
+            # Center single image
+            x_pos = rect.centerx - img_width // 2
+            image_positions = [x_pos]
+        else:
+            # Calculate evenly spaced x positions for multiple images
+            spacing = (rect.width - img_width) / (len(display_indices) - 1) if len(display_indices) > 1 else 0
+            image_positions = [rect.left + i * spacing for i in range(len(display_indices))]
         
         # Draw images and timestamps
         for i, (idx, x_pos) in enumerate(zip(display_indices, image_positions)):
@@ -956,6 +980,45 @@ class Channel:
         self.min_content_height = 100  # Minimum height for data channels
         self.min_annotation_height = 40  # Minimum height for annotation channels
     
+    def get_height(self) -> int:
+        """Get the current height of the channel based on its state."""
+        if self.collapsed:
+            return self.header_height  # Only show header when collapsed
+        elif isinstance(self.data_source, ImageDataSource):
+            # Calculate height based on thumbnail size and aspect ratio
+            if self.data_source.max_images_in_view == 1:
+                # For preview channel, use full thumbnail height plus margins
+                return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
+            else:
+                # For thumbnail channel, use thumbnail height plus margins
+                return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
+        elif self.annotation_channel:
+            return self.min_annotation_height
+        else:
+            return self.min_content_height
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """Handle mouse events. Returns True if event was handled."""
+        if not self.visible:
+            return False
+            
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+            mouse_x, mouse_y = event.pos
+            
+            # Check for collapse/expand button
+            button_rect = pygame.Rect(self.rect.right - 25, self.rect.top + 5, 20, 20)
+            if button_rect.collidepoint(mouse_x, mouse_y):
+                self.collapsed = not self.collapsed
+                return True
+                
+            # Handle click in header (select channel)
+            header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, self.header_height)
+            if header_rect.collidepoint(mouse_x, mouse_y):
+                self.selected = not self.selected
+                return True
+        
+        return False
+    
     def render(self, surface: pygame.Surface, time_scale: Optional[TimeScale] = None) -> None:
         """Render the channel."""
         if not self.visible:
@@ -972,18 +1035,23 @@ class Channel:
         text = font.render(self.name, True, TEXT_COLOR)
         surface.blit(text, (self.rect.left + 5, self.rect.top + 5))
         
-        # Draw collapse indicator
+        # Draw collapse/expand button
+        button_rect = pygame.Rect(self.rect.right - 25, self.rect.top + 5, 20, 20)
+        pygame.draw.rect(surface, GRID_COLOR, button_rect, 1)
+        
         if self.collapsed:
+            # Draw plus sign
             pygame.draw.line(surface, TEXT_COLOR, 
-                           (self.rect.right - 20, self.rect.top + 10),
-                           (self.rect.right - 10, self.rect.top + 10), 1)
-        else:
-            pygame.draw.line(surface, TEXT_COLOR, 
-                           (self.rect.right - 20, self.rect.top + 5),
-                           (self.rect.right - 20, self.rect.top + 15), 1)
+                           (button_rect.centerx - 5, button_rect.centery),
+                           (button_rect.centerx + 5, button_rect.centery), 1)
             pygame.draw.line(surface, TEXT_COLOR,
-                           (self.rect.right - 25, self.rect.top + 10),
-                           (self.rect.right - 15, self.rect.top + 10), 1)
+                           (button_rect.centerx, button_rect.centery - 5),
+                           (button_rect.centerx, button_rect.centery + 5), 1)
+        else:
+            # Draw minus sign
+            pygame.draw.line(surface, TEXT_COLOR,
+                           (button_rect.centerx - 5, button_rect.centery),
+                           (button_rect.centerx + 5, button_rect.centery), 1)
         
         # Draw content if not collapsed
         if not self.collapsed:
@@ -992,8 +1060,7 @@ class Channel:
                 self.rect.left + 1,
                 self.rect.top + self.header_height,  # Start after header
                 self.rect.width - 2,
-                max(self.min_annotation_height if self.annotation_channel else self.min_content_height, 
-                    self.rect.height - self.header_height - 1)  # Ensure minimum content height
+                self.rect.height - self.header_height - 1  # Use remaining height
             )
             
             if self.data_source:
@@ -1014,32 +1081,14 @@ class ChannelView:
         self.padding = 5  # Vertical padding between channels
         self.left_margin = 5  # Left margin for labels
         self.right_margin = 5  # Right margin for values
-    
-    def add_channel(self, channel: Channel) -> None:
-        """Add a channel to the view."""
-        # If this is an image channel, add it at the beginning
-        if isinstance(channel.data_source, ImageDataSource):
-            self.channels.insert(0, channel)
-        else:
-            self.channels.append(channel)
-        if self.selected_channel is None:
-            self.selected_channel = channel
-    
-    def remove_channel(self, channel: Channel) -> None:
-        """Remove a channel from the view."""
-        if channel in self.channels:
-            self.channels.remove(channel)
-            if self.selected_channel == channel:
-                self.selected_channel = self.channels[0] if self.channels else None
+        self.scrollbar_width = 10
+        self.is_dragging_scrollbar = False
+        self.drag_start_y = 0
+        self.drag_start_offset = 0
     
     def get_channel_height(self, channel: Channel) -> int:
-        """Get the appropriate height for a channel based on its type."""
-        if isinstance(channel.data_source, ImageDataSource):
-            return self.min_channel_height
-        elif channel.annotation_channel:
-            return self.min_annotation_height
-        else:
-            return self.min_channel_height
+        """Get the appropriate height for a channel based on its type and state."""
+        return channel.get_height()
     
     def get_channel_position(self, index: int) -> int:
         """Calculate the Y position of a channel given its index."""
@@ -1049,7 +1098,12 @@ class ChannelView:
         return y
     
     def handle_event(self, event: pygame.event.Event) -> bool:
-        """Handle keyboard events. Returns True if event was handled."""
+        """Handle keyboard and mouse events. Returns True if event was handled."""
+        # First check if any channel handles the event
+        for channel in self.channels:
+            if channel.handle_event(event):
+                return True
+        
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
                 if self.selected_channel:
@@ -1081,6 +1135,58 @@ class ChannelView:
                 max_scroll = max(0, total_height - self.rect.height)
                 self.scroll_offset = min(max_scroll, self.scroll_offset + self.rect.height)
                 return True
+        
+        # Handle mouse wheel scrolling
+        elif event.type == pygame.MOUSEWHEEL:
+            if self.rect.collidepoint(pygame.mouse.get_pos()):
+                # Calculate total content height
+                total_height = sum(self.get_channel_height(ch) for ch in self.channels)
+                total_height += (len(self.channels) - 1) * self.padding
+                
+                # Calculate scroll amount (negative because wheel up should scroll up)
+                scroll_amount = -event.y * 30
+                
+                # Update scroll offset
+                self.scroll_offset = max(0, min(
+                    self.scroll_offset + scroll_amount,
+                    max(0, total_height - self.rect.height)
+                ))
+                return True
+        
+        # Handle scrollbar dragging
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_x, mouse_y = event.pos
+            if (self.rect.right - self.scrollbar_width <= mouse_x <= self.rect.right and
+                self.rect.top <= mouse_y <= self.rect.bottom):
+                # Calculate total content height
+                total_height = sum(self.get_channel_height(ch) for ch in self.channels)
+                total_height += (len(self.channels) - 1) * self.padding
+                
+                if total_height > self.rect.height:
+                    self.is_dragging_scrollbar = True
+                    self.drag_start_y = mouse_y
+                    self.drag_start_offset = self.scroll_offset
+                    return True
+        
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.is_dragging_scrollbar = False
+        
+        elif event.type == pygame.MOUSEMOTION and self.is_dragging_scrollbar:
+            mouse_y = event.pos[1]
+            # Calculate total content height
+            total_height = sum(self.get_channel_height(ch) for ch in self.channels)
+            total_height += (len(self.channels) - 1) * self.padding
+            
+            if total_height > self.rect.height:
+                # Calculate scroll ratio
+                scroll_ratio = (mouse_y - self.drag_start_y) / self.rect.height
+                # Update scroll offset
+                self.scroll_offset = max(0, min(
+                    self.drag_start_offset + scroll_ratio * total_height,
+                    total_height - self.rect.height
+                ))
+                return True
+        
         return False
     
     def render(self, surface: pygame.Surface, time_scale: Optional[TimeScale] = None) -> None:
@@ -1122,7 +1228,34 @@ class ChannelView:
             
             # Move to next channel position
             y += channel_height + self.padding
+            
+        # Draw scrollbar if content is scrollable
+        if total_height > visible_height:
+            # Calculate scrollbar dimensions
+            scrollbar_height = (visible_height / total_height) * visible_height
+            scrollbar_x = self.rect.right - self.scrollbar_width
+            scrollbar_y = self.rect.top + (self.scroll_offset / total_height) * visible_height
+            
+            # Draw scrollbar track
+            pygame.draw.rect(surface, GRID_COLOR, 
+                           (scrollbar_x, self.rect.top, self.scrollbar_width, visible_height))
+            
+            # Draw scrollbar thumb
+            pygame.draw.rect(surface, HIGHLIGHT_COLOR,
+                           (scrollbar_x, scrollbar_y, self.scrollbar_width, scrollbar_height))
 
+    def add_channel(self, channel: Channel) -> None:
+        """Add a channel to the view."""
+        self.channels.append(channel)
+        # If this is the first channel, select it
+        if len(self.channels) == 1:
+            self.selected_channel = channel
+            channel.selected = True
+
+
+class LabelEditor:
+    """Widget for editing annotation labels."""
+    
 
 class LabelEditor:
     """Widget for editing annotation labels."""
@@ -1585,7 +1718,7 @@ class AnnotationTool:
         # Clear existing channels
         self.channel_view.channels = []
         
-        # Add data source channels
+        # Add data source channels in their original order
         for source in data_sources:
             rect = pygame.Rect(0, 0, self.screen.get_width(), 150)  # Height will be adjusted by ChannelView
             channel = Channel(source.name, rect)
@@ -2183,10 +2316,14 @@ class AnnotationTool:
                     self.logger.info(f"Window resized to: {new_width}x{new_height}")
                     continue # Skip other event handling for this frame after resize
                 
-                # Handle Mouse Clicks
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    # Check for status bar button clicks
-                    if self.status_bar.rect.collidepoint(event.pos):
+                # Handle Mouse Events
+                elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
+                    # First try channel view
+                    if self.channel_view.handle_event(event):
+                        continue
+                    
+                    # Then check for status bar button clicks
+                    if event.type == pygame.MOUSEBUTTONDOWN and self.status_bar.rect.collidepoint(event.pos):
                         handled = False
                         # Check left buttons (Save, Help)
                         for button_data in self.status_bar.left_buttons:
