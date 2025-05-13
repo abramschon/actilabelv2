@@ -1253,8 +1253,8 @@ class ChannelView:
     def add_channel(self, channel: Channel) -> None:
         """Add a channel to the view."""
         self.channels.append(channel)
-        # If this is the first channel, select it
-        if len(self.channels) == 1:
+        # If this is the first channel and it's an annotation channel, select it
+        if len(self.channels) == 1 and channel.annotation_channel:
             self.selected_channel = channel
             channel.selected = True
 
