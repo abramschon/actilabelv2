@@ -28,6 +28,7 @@ HIGHLIGHT_COLOR = hex_to_rgb("#61AFEF")  # Bright Blue for selections/cursor
 ERROR_COLOR = hex_to_rgb("#E06C75")      # Soft Red/Pink
 SUCCESS_COLOR = hex_to_rgb("#98C379")    # Soft Green
 WARNING_COLOR = hex_to_rgb("#E5C07B")    # Soft Yellow/Gold
+CURSOR_COLOR = hex_to_rgb("#5C6370")     # Brighter grey for cursor and timestamp lines
 ANNOTATION_COLORS = [
     hex_to_rgb("#61AFEF"),   # Blue
     hex_to_rgb("#98C379"),   # Green
@@ -488,8 +489,28 @@ class ImageDataSource(DataSource):
         super().__init__(name)
         self.times = times
         self.image_paths = image_paths
-        self.thumbnail_size = thumbnail_size
         self.max_images_in_view = max_images_in_view
+        
+        # Calculate thumbnail size maintaining aspect ratio
+        if image_paths:
+            # Load first image to get aspect ratio
+            try:
+                with Image.open(image_paths[0]) as img:
+                    width, height = img.size
+                    aspect_ratio = width / height
+                    
+                    # Set thumbnail size based on aspect ratio
+                    if width > height:
+                        # Image is wider than tall
+                        self.thumbnail_size = (thumbnail_size[0], int(thumbnail_size[0] / aspect_ratio))
+                    else:
+                        # Image is taller than wide
+                        self.thumbnail_size = (int(thumbnail_size[1] * aspect_ratio), thumbnail_size[1])
+            except Exception as e:
+                print(f"Error loading image for aspect ratio: {e}")
+                self.thumbnail_size = thumbnail_size
+        else:
+            self.thumbnail_size = thumbnail_size
         
         # LRU Cache implementation
         self.thumbnail_cache_size = 100  # Maximum number of thumbnails to keep in memory
@@ -525,7 +546,22 @@ class ImageDataSource(DataSource):
             
             # Load and process image
             img = Image.open(path)
-            img.thumbnail(self.thumbnail_size)
+            
+            # Calculate new dimensions while maintaining aspect ratio
+            width, height = img.size
+            aspect_ratio = width / height
+            
+            if width > height:
+                # Image is wider than tall
+                new_width = self.thumbnail_size[0]
+                new_height = int(new_width / aspect_ratio)
+            else:
+                # Image is taller than wide
+                new_height = self.thumbnail_size[1]
+                new_width = int(new_height * aspect_ratio)
+            
+            # Resize image maintaining aspect ratio
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             img_data = img.convert("RGB")
             img_surface = pygame.image.frombuffer(
                 img_data.tobytes(), img_data.size, img_data.mode)
@@ -559,7 +595,7 @@ class ImageDataSource(DataSource):
         
         # If not in cache, try to load it
         if self._load_thumbnail(path):
-            return self.thumbnails[path]
+            return self.thumbnails.get(path)  # Use .get() to safely access the thumbnail
         
         return None
     
@@ -652,13 +688,13 @@ class ImageDataSource(DataSource):
             
             # Draw connection line from image to timestamp
             timeline_y = rect.bottom - timeline_height // 2
-            pygame.draw.line(surface, HIGHLIGHT_COLOR,
+            pygame.draw.line(surface, CURSOR_COLOR,
                            (x_pos + img_width // 2, y + img_height),  # Bottom center of image
                            (time_x, timeline_y),  # Timeline position
                            1)
             
             # Draw timestamp marker
-            pygame.draw.circle(surface, HIGHLIGHT_COLOR, (int(time_x), timeline_y), 3)
+            pygame.draw.circle(surface, CURSOR_COLOR, (int(time_x), timeline_y), 3)
             
             # Draw time label with smaller font
             font = pygame.font.SysFont("Helvetica Neue", 12)  # Reduced from 14 to 12
@@ -2611,12 +2647,11 @@ class AnnotationTool:
             channel_view_width = self.channel_view.rect.width
             center_x = self.channel_view.rect.left + (channel_view_width // 2)
             
-            # Draw the line stopping above the time scrubber area
-            cursor_line_y_end = self.screen_height - self.total_bottom_height
-            pygame.draw.line(self.screen, HIGHLIGHT_COLOR, 
-                           (center_x, 0), 
-                           (center_x, cursor_line_y_end), 
-                           2)
+            # Draw the line from top to bottom of screen
+            pygame.draw.line(self.screen, CURSOR_COLOR, 
+                           (center_x, 0),  # Start from top
+                           (center_x, self.screen_height),  # End at bottom of screen
+                           1)  # Thinner line (was 2)
             
             # Calculate and draw the timestamp for the center cursor position
             if self.time_scale:

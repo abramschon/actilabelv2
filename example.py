@@ -141,7 +141,7 @@ def create_example_dataset():
             "Preview",
             image_times,
             image_paths,
-            thumbnail_size=(640, 300),
+            thumbnail_size=(300, 300),
             max_images_in_view=1,
         ),
         ImageDataSource(
