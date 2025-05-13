@@ -1689,18 +1689,12 @@ class AnnotationTool:
             self.logger.success(f"Updated annotation: {annotation.label} ({self.time_scale.time_to_str(annotation.start_time)} - {self.time_scale.time_to_str(annotation.end_time)})")
     
     def load_data(self, data_sources: List[DataSource], annotation_channels: List[AnnotationChannel], load_existing: bool = False):
-        """Load data sources and annotation channels.
-        
-        Args:
-            data_sources: List of data sources to display
-            annotation_channels: List of annotation channels to use
-            load_existing: Whether to load existing annotations for these channels
-        """
+        """Load data sources and annotation channels."""
         if not data_sources and not annotation_channels:
             self.logger.error("No data sources or annotation channels provided")
             return
             
-        # Find overall time range
+        # Find overall time range for data bounds
         min_time = None
         max_time = None
         
@@ -1710,21 +1704,12 @@ class AnnotationTool:
                 min_time = source_min
             if max_time is None or source_max > max_time:
                 max_time = source_max
-                
-        for channel in annotation_channels:
-            if channel.annotations:
-                channel_min = min(a.start_time for a in channel.annotations)
-                channel_max = max(a.end_time for a in channel.annotations)
-                if min_time is None or channel_min < min_time:
-                    min_time = channel_min
-                if max_time is None or channel_max > max_time:
-                    max_time = channel_max
         
         if min_time is None or max_time is None:
             min_time = np.datetime64('2000-01-01')
             max_time = min_time + np.timedelta64(1, 'h')
         
-        # Initialize time scale
+        # Initialize time scale with full range first
         self.time_scale = TimeScale(min_time, max_time)
         self.time_scrubber.time_scale = self.time_scale
         
@@ -1733,34 +1718,24 @@ class AnnotationTool:
         
         # Add data source channels in their original order
         for source in data_sources:
-            rect = pygame.Rect(0, 0, self.screen.get_width(), 150)  # Height will be adjusted by ChannelView
+            rect = pygame.Rect(0, 0, self.screen.get_width(), 150)
             channel = Channel(source.name, rect)
             channel.data_source = source
-            source.time_scale = self.time_scale  # Set time_scale for the data source
+            source.time_scale = self.time_scale
             self.channel_view.add_channel(channel)
-            
+        
         # Add annotation channels
         for ann_channel in annotation_channels:
-            rect = pygame.Rect(0, 0, self.screen.get_width(), 150)  # Height will be adjusted by ChannelView
+            rect = pygame.Rect(0, 0, self.screen.get_width(), 150)
             channel = Channel(ann_channel.name, rect)
             channel.annotation_channel = ann_channel
             self.channel_view.add_channel(channel)
-            
-        # Select the first annotation channel by default
-        for channel in self.channel_view.channels:
-            if channel.annotation_channel:
-                channel.selected = True
-                self.logger.info(f"Selected channel: {channel.name}")
-                # Initialize label editor with the first annotation channel
-                self.label_editor.annotation_channel = channel.annotation_channel
-                self.label_editor.time_scale = self.time_scale
-                break
-    
+        
         # Load existing annotations if requested
         if load_existing:
             self.load_annotations()  # Load all channels
-            
-        # Find the latest time to position cursor
+        
+        # Now that annotations are loaded, find the latest time to position cursor
         latest_time = None
         
         # First check for annotations
@@ -1773,18 +1748,41 @@ class AnnotationTool:
         
         # If no annotations found, use the latest start time from data sources
         if latest_time is None:
-            for channel in self.channel_view.channels:
-                if channel.data_source:
-                    source_min, _ = channel.data_source.get_time_range()
-                    if latest_time is None or source_min > latest_time:
-                        latest_time = source_min
+            for source in data_sources:
+                source_min, _ = source.get_time_range()
+                if latest_time is None or source_min > latest_time:
+                    latest_time = source_min
         
         # Set cursor position to the latest time found
         if latest_time is not None:
-            # Convert the time to a unit position (0-1)
+            # First set the cursor position
             unit_pos = self.time_scale.to_unit(np.array([latest_time]))[0]
             self.time_scrubber.set_position(unit_pos)
+            
+            # Then adjust the view window to be centered on this position
+            view_duration = np.timedelta64(10, 'm')  # 10 minutes total (5 on each side)
+            view_start = latest_time - view_duration / 2
+            view_end = latest_time + view_duration / 2
+            
+            # Ensure view stays within data bounds
+            view_start = max(min_time, view_start)
+            view_end = min(max_time, view_end)
+            
+            # Update time scale with new view window
+            self.time_scale = TimeScale(view_start, view_end)
+            self.time_scrubber.time_scale = self.time_scale
+            
             self.logger.info(f"Set initial cursor position to {self.time_scale.time_to_str(latest_time)}")
+        
+        # Select the first annotation channel by default
+        for channel in self.channel_view.channels:
+            if channel.annotation_channel:
+                channel.selected = True
+                self.logger.info(f"Selected channel: {channel.name}")
+                # Initialize label editor with the first annotation channel
+                self.label_editor.annotation_channel = channel.annotation_channel
+                self.label_editor.time_scale = self.time_scale
+                break
     
     def _handle_enter(self):
         """Handle enter key to select annotation for editing or finish editing."""
