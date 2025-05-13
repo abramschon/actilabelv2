@@ -5,6 +5,7 @@ import colorsys
 from main import AnnotationTool, VectorDataSource, ScalarDataSource, ImageDataSource, AnnotationChannel
 import glob
 from datetime import datetime
+import argparse
 
 
 def parse_timestamp_from_filename(filename):
@@ -60,44 +61,68 @@ def main():
     - Launch the annotation tool, with the image paths and timestamps as the data sources.
     - The simple_posture.csv and certainty.csv files define the potential labels for the simple_posture and certainty annotation channels.
     """
-    # Prompt for input and output folders
-    camera_input_folder = input("Enter the camera input folder path: ").strip()
-    annotation_output_folder = input("Enter the annotation output folder path: ").strip()
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='ELSA Study Annotation Tool')
+    parser.add_argument('--input', '-i', 
+                      type=str,
+                      required=True,
+                      help='Path to the camera input folder containing participant directories')
+    parser.add_argument('--output', '-o',
+                      type=str,
+                      required=True,
+                      help='Path to the annotation output folder')
+    parser.add_argument('--participant', '-p',
+                      type=str,
+                      help='Optional: Specific participant folder to annotate. If not provided, will show selection menu.')
+    
+    args = parser.parse_args()
     
     # Validate input folder exists
-    if not os.path.exists(camera_input_folder):
-        print(f"Error: Input folder '{camera_input_folder}' does not exist")
+    if not os.path.exists(args.input):
+        print(f"Error: Input folder '{args.input}' does not exist")
         return
     
     # Create output folder if it doesn't exist
-    if not os.path.exists(annotation_output_folder):
-        os.makedirs(annotation_output_folder)
-        print(f"Created annotation output folder: {annotation_output_folder}")
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+        print(f"Created annotation output folder: {args.output}")
     
     # Get list of participant folders
-    participant_folders = get_participant_folders(camera_input_folder)
+    participant_folders = get_participant_folders(args.input)
     if not participant_folders:
         print("No participant folders found in the input directory")
         return
     
-    # Display available participants and prompt for selection
-    print("\nAvailable participants:")
-    for i, folder in enumerate(participant_folders, 1):
-        print(f"{i}. {folder}")
-    
-    while True:
-        try:
-            selection = int(input("\nSelect participant number to annotate: "))
-            if 1 <= selection <= len(participant_folders):
-                selected_participant = participant_folders[selection - 1]
-                break
-            else:
-                print("Invalid selection. Please try again.")
-        except ValueError:
-            print("Please enter a valid number.")
+    # Handle participant selection
+    selected_participant = None
+    if args.participant:
+        if args.participant in participant_folders:
+            selected_participant = args.participant
+        else:
+            print(f"Error: Participant '{args.participant}' not found in input directory")
+            print("Available participants:")
+            for folder in participant_folders:
+                print(f"- {folder}")
+            return
+    else:
+        # Display available participants and prompt for selection
+        print("\nAvailable participants:")
+        for i, folder in enumerate(participant_folders, 1):
+            print(f"{i}. {folder}")
+        
+        while True:
+            try:
+                selection = int(input("\nSelect participant number to annotate: "))
+                if 1 <= selection <= len(participant_folders):
+                    selected_participant = participant_folders[selection - 1]
+                    break
+                else:
+                    print("Invalid selection. Please try again.")
+            except ValueError:
+                print("Please enter a valid number.")
     
     # Get image files for selected participant
-    participant_path = os.path.join(camera_input_folder, selected_participant)
+    participant_path = os.path.join(args.input, selected_participant)
     image_files = glob.glob(os.path.join(participant_path, "*.JPG"))
     
     if not image_files:
@@ -121,7 +146,7 @@ def main():
         return
     
     # Create participant output folder
-    participant_output_folder = os.path.join(annotation_output_folder, selected_participant)
+    participant_output_folder = os.path.join(args.output, selected_participant)
     if not os.path.exists(participant_output_folder):
         os.makedirs(participant_output_folder)
     
