@@ -19,7 +19,8 @@ def parse_timestamp_from_filename(filename):
         # Remove the 'E' suffix from the time part
         time_part = time_part[:6]  # 072834
         timestamp_str = date_part + time_part
-        return datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+        dt = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+        return np.datetime64(dt)
     except:
         return None
 
