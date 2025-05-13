@@ -1728,10 +1728,6 @@ class AnnotationTool:
         self.time_scale = TimeScale(min_time, max_time)
         self.time_scrubber.time_scale = self.time_scale
         
-        # Set cursor to start of data and reset view
-        self.time_scrubber.set_position(0.0)  # Set to beginning (0%)
-        self.time_scale.reset_view()  # Ensure view is at initial range
-        
         # Clear existing channels
         self.channel_view.channels = []
         
@@ -1763,6 +1759,32 @@ class AnnotationTool:
         # Load existing annotations if requested
         if load_existing:
             self.load_annotations()  # Load all channels
+            
+        # Find the latest time to position cursor
+        latest_time = None
+        
+        # First check for annotations
+        for channel in self.channel_view.channels:
+            if channel.annotation_channel and channel.annotation_channel.annotations:
+                # Get the latest end time from annotations
+                channel_latest = max(a.end_time for a in channel.annotation_channel.annotations)
+                if latest_time is None or channel_latest > latest_time:
+                    latest_time = channel_latest
+        
+        # If no annotations found, use the latest start time from data sources
+        if latest_time is None:
+            for channel in self.channel_view.channels:
+                if channel.data_source:
+                    source_min, _ = channel.data_source.get_time_range()
+                    if latest_time is None or source_min > latest_time:
+                        latest_time = source_min
+        
+        # Set cursor position to the latest time found
+        if latest_time is not None:
+            # Convert the time to a unit position (0-1)
+            unit_pos = self.time_scale.to_unit(np.array([latest_time]))[0]
+            self.time_scrubber.set_position(unit_pos)
+            self.logger.info(f"Set initial cursor position to {self.time_scale.time_to_str(latest_time)}")
     
     def _handle_enter(self):
         """Handle enter key to select annotation for editing or finish editing."""
