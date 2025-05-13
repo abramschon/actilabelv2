@@ -2079,17 +2079,17 @@ class AnnotationTool:
         
         # Find the index of the *currently* selected channel within the annotation_channels list
         current_ann_idx = -1
-        for i in range(num_ann_channels):
-            if annotation_channels[i][0] == self.selected_channel_index:
+        for i, (idx, _) in enumerate(annotation_channels):
+            if idx == self.selected_channel_index:
                 current_ann_idx = i
-            break
+                break
         
         # Calculate the index of the previous annotation channel
         if current_ann_idx == -1:
             # If the current selection isn't an annotation channel, select the last one
             prev_ann_idx = num_ann_channels - 1
         else:
-            prev_ann_idx = (current_ann_idx - 1 + num_ann_channels) % num_ann_channels
+            prev_ann_idx = (current_ann_idx - 1) % num_ann_channels
             
         # Get the original index of the new channel to select
         new_channel_original_idx = annotation_channels[prev_ann_idx][0]
