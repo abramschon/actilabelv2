@@ -13,6 +13,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 import pandas as pd
 from PIL import Image
 from pathlib import Path
+from datetime import datetime
 
 # Helper to convert hex to RGB
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
@@ -488,10 +489,15 @@ class ImageDataSource(DataSource):
         self.times = times
         self.image_paths = image_paths
         self.thumbnail_size = thumbnail_size
-        self.max_images_in_view = max_images_in_view  # Maximum number of images to show at once
+        self.max_images_in_view = max_images_in_view
         
-        # Load and cache thumbnails (limit initial load to avoid startup delay)
-        self.thumbnails = {}
+        # LRU Cache implementation
+        self.thumbnail_cache_size = 100  # Maximum number of thumbnails to keep in memory
+        self.thumbnails = {}  # Dictionary to store thumbnails
+        self.thumbnail_order = []  # List to track LRU order
+        self.thumbnail_locks = {}  # Dictionary to track loading status
+        
+        # Preload initial thumbnails in background
         self.preload_count = min(20, len(image_paths))
         self.load_thread = threading.Thread(target=self._preload_thumbnails, daemon=True)
         self.load_thread.start()
@@ -502,33 +508,56 @@ class ImageDataSource(DataSource):
             self._load_thumbnail(path)
     
     def _load_thumbnail(self, path: str) -> bool:
-        """Load a thumbnail into the cache."""
+        """Load a thumbnail into the cache with LRU eviction."""
+        # If already loading, wait for it
+        if path in self.thumbnail_locks:
+            return True
+            
+        # If already in cache, update LRU order
         if path in self.thumbnails:
+            self.thumbnail_order.remove(path)
+            self.thumbnail_order.append(path)
             return True
         
         try:
+            # Mark as loading
+            self.thumbnail_locks[path] = True
+            
+            # Load and process image
             img = Image.open(path)
             img.thumbnail(self.thumbnail_size)
-            # Convert PIL image to pygame surface
             img_data = img.convert("RGB")
             img_surface = pygame.image.frombuffer(
                 img_data.tobytes(), img_data.size, img_data.mode)
+            
+            # Implement LRU cache eviction
+            if len(self.thumbnails) >= self.thumbnail_cache_size:
+                oldest = self.thumbnail_order.pop(0)
+                del self.thumbnails[oldest]
+            
+            # Add to cache
             self.thumbnails[path] = img_surface
+            self.thumbnail_order.append(path)
+            
+            # Remove loading lock
+            del self.thumbnail_locks[path]
             return True
+            
         except Exception as e:
             print(f"Error loading {path}: {e}")
+            if path in self.thumbnail_locks:
+                del self.thumbnail_locks[path]
             return False
-    
-    def get_time_range(self) -> Tuple[np.datetime64, np.datetime64]:
-        if len(self.times) == 0:
-            return np.datetime64('2000-01-01'), np.datetime64('2000-01-02')
-        return self.times[0], self.times[-1]
     
     def get_thumbnail(self, path: str) -> Optional[pygame.Surface]:
         """Get a thumbnail for the given path, loading if necessary."""
+        # If in cache, update LRU order and return
         if path in self.thumbnails:
+            self.thumbnail_order.remove(path)
+            self.thumbnail_order.append(path)
             return self.thumbnails[path]
         
+        # If not in cache, try to load it
         if self._load_thumbnail(path):
             return self.thumbnails[path]
         
@@ -645,6 +674,12 @@ class ImageDataSource(DataSource):
                         (rect.left, timeline_y),
                         (rect.right, timeline_y),
                         1)
+
+    def get_time_range(self) -> Tuple[datetime, datetime]:
+        """Get the time range of the data source."""
+        if len(self.times) == 0:
+            raise ValueError("No times available in ImageDataSource")
+        return self.times[0], self.times[-1]
 
 class TextRangeDataSource(DataSource):
     """A data source for existing annotations."""
