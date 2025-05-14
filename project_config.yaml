@@ -1,0 +1,48 @@
+# Project configuration for annotation tool
+
+# Timestamp format for image filenames
+# Uses Python datetime format codes: https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
+timestamp_format:
+  pattern: "%Y%m%d_%H%M%S"  # Example: 20250429_173050
+  example: "20250429_173050"  # Example filename for reference
+
+# Time offset to apply to image timestamps
+# Format: "HH:MM:SS" or "HH:MM:SS.SSS" for hours, minutes, seconds (and optional milliseconds)
+# Examples:
+#   "01:00:00"    # 1 hour delay
+#   "-01:00:00"   # 1 hour advance
+#   "00:30:00"    # 30 minutes delay
+#   "00:00:30"    # 30 seconds delay
+#   "00:00:00.500" # 500 milliseconds delay
+time_offset: "01:00:00"
+
+# Display settings for images
+display_settings:
+  preview:
+    size: [300, 300]  # Width and height of preview image
+    max_images: 1     # Number of preview images to show
+  thumbnails:
+    size: [100, 100]  # Width and height of thumbnail images
+    max_images: 20    # Number of thumbnail images to show
+
+# Annotation channels and their possible labels
+annotation_channels:
+  - name: "Outdoor"
+    labels:
+      - "outdoor"
+      - "indoor"
+  - name: "Intensity"
+    labels:
+      - "sedentary"
+      - "light"
+      - "moderate"
+      - "vigorous"
+  - name: "Certainty"
+    labels:
+      - "high certainty"
+      - "low certainty"
+
+# Optional: Custom colors for scalar data sources
+scalar_colors:
+  Temperature: [255, 100, 100]  # Red
+  Light: [255, 255, 100]        # Yellow 
