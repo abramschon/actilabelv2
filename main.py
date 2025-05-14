@@ -111,7 +111,6 @@ class Annotation:
     label: str
     start_time: np.datetime64
     end_time: np.datetime64
-    confidence: float = 1.0
     
     def contains_time(self, time: np.datetime64) -> bool:
         """Check if this annotation contains the given time."""
@@ -126,8 +125,7 @@ class Annotation:
         return {
             'label': self.label,
             'start_time': str(self.start_time),
-            'end_time': str(self.end_time),
-            'confidence': self.confidence
+            'end_time': str(self.end_time)
         }
     
     @classmethod
@@ -136,8 +134,7 @@ class Annotation:
         return cls(
             label=data['label'],
             start_time=np.datetime64(data['start_time']),
-            end_time=np.datetime64(data['end_time']),
-            confidence=data.get('confidence', 1.0)
+            end_time=np.datetime64(data['end_time'])
         )
 
 class AnnotationChannel:
@@ -1992,8 +1989,7 @@ class AnnotationTool:
         annotation = Annotation(
             label=label_text,
             start_time=self.annotation_start_time,
-            end_time=current_time,
-            confidence=1.0
+            end_time=current_time
         )
         
         # Add to channel
@@ -2383,8 +2379,7 @@ class AnnotationTool:
                     annotation = Annotation(
                         label=row['label'],
                         start_time=np.datetime64(row['start_time']),
-                        end_time=np.datetime64(row['end_time']),
-                        confidence=float(row['confidence'])
+                        end_time=np.datetime64(row['end_time'])
                     )
                     target_channel.annotation_channel.annotations.append(annotation)
                     
