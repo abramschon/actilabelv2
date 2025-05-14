@@ -2308,8 +2308,7 @@ class AnnotationTool:
                     annotations_data = {
                         'label': [],
                         'start_time': [],
-                        'end_time': [],
-                        'confidence': []
+                        'end_time': []
                     }
                     
                     # Sort annotations by start time
@@ -2321,7 +2320,6 @@ class AnnotationTool:
                         annotations_data['label'].append(ann.label)
                         annotations_data['start_time'].append(str(ann.start_time))
                         annotations_data['end_time'].append(str(ann.end_time))
-                        annotations_data['confidence'].append(ann.confidence)
                     
                     # Create and save DataFrame
                     df = pd.DataFrame(annotations_data)
