@@ -1540,10 +1540,6 @@ class ChannelView:
 class LabelEditor:
     """Widget for editing annotation labels."""
     
-
-class LabelEditor:
-    """Widget for editing annotation labels."""
-    
     def __init__(self, rect: pygame.Rect):
         self.rect = rect
         self.text = ""
@@ -1559,7 +1555,10 @@ class LabelEditor:
         self.suggestion_rect = pygame.Rect(rect.left, rect.bottom + 5, rect.width, 150)
         self.max_suggestions = 5
         self.on_submit = None  # Callback for when a label is submitted
-        
+        self.showing_all_labels = True  # Track whether we're showing all labels or filtered suggestions
+        self.new_label_pending = False  # Track if we're waiting for confirmation of a new label
+        self.pending_label = ""  # Store the pending new label
+    
     def activate(self, annotation_channel, on_submit):
         """Activate the editor with the given annotation channel."""
         self.active = True
@@ -1567,6 +1566,9 @@ class LabelEditor:
         self.text = ""
         self.cursor_pos = 0
         self.on_submit = on_submit
+        self.showing_all_labels = True  # Start by showing all labels
+        self.new_label_pending = False
+        self.pending_label = ""
         # Initialize autocomplete with possible labels
         self.autocomplete = AutocompleteSearch(annotation_channel.possible_labels)
     
@@ -1577,15 +1579,38 @@ class LabelEditor:
             
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_RETURN:
-                if self.autocomplete and self.autocomplete.get_selected():
+                if self.new_label_pending:
+                    # Confirm adding the new label
+                    if self.text and self.on_submit:
+                        # Add the new label to possible labels
+                        self.annotation_channel.add_label(self.text)
+                        self.on_submit(self.text)
+                    self.active = False
+                    return True
+                elif self.autocomplete and self.autocomplete.get_selected():
                     # Use the selected suggestion
                     self.text = self.autocomplete.get_selected()
-                # Submit the label
-                if self.text and self.on_submit:
-                    self.on_submit(self.text)
-                self.active = False
-                return True
+                    if self.text and self.on_submit:
+                        self.on_submit(self.text)
+                    self.active = False
+                    return True
+                elif self.text:
+                    # Check if this is a new label
+                    if self.text not in self.annotation_channel.possible_labels:
+                        self.new_label_pending = True
+                        self.pending_label = self.text
+                        return True
+                    # If it's an existing label, submit it
+                    if self.on_submit:
+                        self.on_submit(self.text)
+                    self.active = False
+                    return True
             elif event.key == pygame.K_ESCAPE:
+                if self.new_label_pending:
+                    # Cancel new label confirmation
+                    self.new_label_pending = False
+                    self.pending_label = ""
+                    return True
                 self.active = False
                 return True
             elif event.key == pygame.K_BACKSPACE:
@@ -1593,7 +1618,12 @@ class LabelEditor:
                     self.text = self.text[:self.cursor_pos - 1] + self.text[self.cursor_pos:]
                     self.cursor_pos -= 1
                     if self.autocomplete:
+                        self.showing_all_labels = len(self.text) == 0  # Show all labels if text is empty
                         self.autocomplete.update_query(self.text)
+                    # Reset new label confirmation if we're modifying the text
+                    if self.new_label_pending:
+                        self.new_label_pending = False
+                        self.pending_label = ""
                 return True
             elif event.key == pygame.K_LEFT:
                 if self.cursor_pos > 0:
@@ -1620,7 +1650,12 @@ class LabelEditor:
                 self.text = self.text[:self.cursor_pos] + event.unicode + self.text[self.cursor_pos:]
                 self.cursor_pos += 1
                 if self.autocomplete:
+                    self.showing_all_labels = False  # Switch to filtered suggestions when typing
                     self.autocomplete.update_query(self.text)
+                # Reset new label confirmation if we're modifying the text
+                if self.new_label_pending:
+                    self.new_label_pending = False
+                    self.pending_label = ""
                 return True
         return False
     
@@ -1647,9 +1682,36 @@ class LabelEditor:
                            (cursor_x, cursor_y - 10),
                            (cursor_x, cursor_y + 10), 1)
         
-        # Draw suggestions if we have any
-        if self.autocomplete:
-            suggestions = self.autocomplete.get_results()[:self.max_suggestions]
+        # Draw suggestions or new label confirmation
+        if self.new_label_pending:
+            # Draw new label confirmation message
+            confirmation_height = 60
+            confirmation_rect = pygame.Rect(
+                self.suggestion_rect.left,
+                self.suggestion_rect.top,
+                self.suggestion_rect.width,
+                confirmation_height
+            )
+            pygame.draw.rect(surface, BACKGROUND_COLOR, confirmation_rect)
+            pygame.draw.rect(surface, WARNING_COLOR, confirmation_rect, 1)
+            
+            # Draw confirmation text
+            font = pygame.font.SysFont("Helvetica Neue", 14)
+            text1 = font.render("New label detected:", True, WARNING_COLOR)
+            text2 = font.render(f'"{self.text}"', True, TEXT_COLOR)
+            text3 = font.render("Press Enter to add this label to the list or Escape to cancel", True, TEXT_COLOR)
+            
+            surface.blit(text1, (confirmation_rect.left + 5, confirmation_rect.top + 5))
+            surface.blit(text2, (confirmation_rect.left + 5, confirmation_rect.top + 25))
+            surface.blit(text3, (confirmation_rect.left + 5, confirmation_rect.top + 45))
+        elif self.autocomplete:
+            if self.showing_all_labels:
+                # Show all possible labels when no text is entered
+                suggestions = self.annotation_channel.possible_labels[:self.max_suggestions]
+            else:
+                # Show filtered suggestions based on current text
+                suggestions = self.autocomplete.get_results()[:self.max_suggestions]
+            
             if suggestions:
                 # Draw suggestion background
                 suggestion_height = len(suggestions) * 25 + 10
