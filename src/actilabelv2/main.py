@@ -2167,14 +2167,14 @@ class AnnotationTool:
         if previous_annotation:
             start_time = previous_annotation.end_time
         else:
-            # No previous annotation, use earliest time from data sources
-            earliest_time = None
+            # No previous annotation, use latest start time from data sources
+            latest_start_time = None
             for channel in self.channel_view.channels:
                 if channel.data_source:
                     source_start, _ = channel.data_source.get_time_range()
-                    if earliest_time is None or source_start < earliest_time:
-                        earliest_time = source_start
-            start_time = earliest_time if earliest_time is not None else self.time_scale.min_time
+                    if latest_start_time is None or source_start > latest_start_time:
+                        latest_start_time = source_start
+            start_time = latest_start_time if latest_start_time is not None else self.time_scale.min_time
         
         # Start creating a new annotation
         self.creating_annotation = True
