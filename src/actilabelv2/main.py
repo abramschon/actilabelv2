@@ -525,6 +525,7 @@ class ImageDataSource(DataSource):
         self.image_paths = image_paths
         self.max_images_in_view = max_images_in_view
         self.display_mode = display_mode  # Store display mode
+        self.buffer_images = 2  # Number of images to show in buffer on each side
         
         # Calculate thumbnail size maintaining aspect ratio
         if image_paths:
@@ -666,19 +667,49 @@ class ImageDataSource(DataSource):
             else:
                 display_indices = visible_indices
         else:  # Thumbnail channel
-            # Downsample visible images if there are too many
-            if len(visible_indices) > self.max_images_in_view:
-                step = len(visible_indices) // self.max_images_in_view
-                display_indices = visible_indices[::step][:self.max_images_in_view]
-            else:
-                display_indices = visible_indices
+            if self.display_mode == "grid":
+                # Downsample visible images if there are too many
+                if len(visible_indices) > self.max_images_in_view:
+                    step = len(visible_indices) // self.max_images_in_view
+                    display_indices = visible_indices[::step][:self.max_images_in_view]
+                else:
+                    display_indices = visible_indices
+            else:  # centered mode
+                # Find images in visible range plus buffer on both sides
+                buffer_time = (time_scale.max_time - time_scale.min_time) * 0.2  # 20% buffer on each side
+                buffered_min_time = time_scale.min_time - buffer_time
+                buffered_max_time = time_scale.max_time + buffer_time
+                
+                buffered_mask = np.logical_and(
+                    self.times >= buffered_min_time,
+                    self.times <= buffered_max_time
+                )
+                buffered_indices = np.where(buffered_mask)[0]
+                
+                # Always show a fixed number of images (visible + buffer)
+                total_images = self.max_images_in_view + (2 * self.buffer_images)
+                
+                if len(buffered_indices) > total_images:
+                    # Calculate step size to get exactly total_images
+                    step = len(buffered_indices) // total_images
+                    display_indices = buffered_indices[::step][:total_images]
+                else:
+                    display_indices = buffered_indices
         
         # Calculate layout
         img_margin = 5
         timeline_height = 40  # Height reserved for timeline
         img_area_height = rect.height - timeline_height
-        img_width = min(self.thumbnail_size[0], 
-                       (rect.width - (len(display_indices) + 1) * img_margin) // len(display_indices))
+        
+        # Calculate fixed image width based on max_images_in_view (not including buffer)
+        if self.display_mode == "centered":
+            # Use max_images_in_view for width calculation to maintain stable size
+            img_width = min(self.thumbnail_size[0], 
+                          (rect.width - (self.max_images_in_view + 1) * img_margin) // self.max_images_in_view)
+        else:
+            img_width = min(self.thumbnail_size[0], 
+                          (rect.width - (len(display_indices) + 1) * img_margin) // len(display_indices))
+            
         img_height = int(img_width * self.thumbnail_size[1] / self.thumbnail_size[0])
         
         # Calculate x positions for images based on display mode
@@ -708,17 +739,38 @@ class ImageDataSource(DataSource):
             # Calculate image position
             y = rect.top + (img_area_height - img_height) // 2
             
+            # Calculate alpha based on position relative to visible window
+            alpha = 255
+            if self.display_mode == "centered":
+                time_unit = time_scale.to_unit(np.array([time]))[0]
+                # Calculate distance from center of visible window
+                center_unit = 0.5
+                distance = abs(time_unit - center_unit)
+                # Fade out images that are in the buffer zone
+                if distance > 0.5:  # Outside visible window
+                    alpha = int(255 * (1 - (distance - 0.5) * 2))  # Fade out in buffer zone
+                    alpha = max(0, min(255, alpha))  # Clamp between 0 and 255
+            
             # Draw the image if loaded
             thumbnail = self.get_thumbnail(path)
             if thumbnail:
                 # Scale thumbnail if needed
                 if thumbnail.get_width() != img_width or thumbnail.get_height() != img_height:
                     thumbnail = pygame.transform.scale(thumbnail, (img_width, img_height))
+                
+                # Create a surface with alpha
+                if alpha < 255:
+                    thumbnail = thumbnail.copy()
+                    thumbnail.set_alpha(alpha)
+                
                 surface.blit(thumbnail, (x_pos, y))
             else:
-                # Draw placeholder
+                # Draw placeholder with alpha
                 placeholder_rect = pygame.Rect(x_pos, y, img_width, img_height)
-                pygame.draw.rect(surface, GRID_COLOR, placeholder_rect, 1)
+                placeholder_surface = pygame.Surface((img_width, img_height))
+                placeholder_surface.set_alpha(alpha)
+                placeholder_surface.fill(GRID_COLOR)
+                surface.blit(placeholder_surface, (x_pos, y))
                 pygame.draw.line(surface, GRID_COLOR, 
                                 (placeholder_rect.left, placeholder_rect.top),
                                 (placeholder_rect.right, placeholder_rect.bottom), 1)
