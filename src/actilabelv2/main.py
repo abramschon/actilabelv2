@@ -345,11 +345,20 @@ class ScalarDataSource(DataSource):
         self.min_value = np.min(values) if len(values) else 0
         self.max_value = np.max(values) if len(values) else 1
         self.range = max(self.max_value - self.min_value, 1e-9)  # Avoid division by zero
+        self.y_scale = 1.0  # Add y-axis scale factor
     
     def get_time_range(self) -> Tuple[np.datetime64, np.datetime64]:
         if len(self.times) == 0:
             return np.datetime64('2000-01-01'), np.datetime64('2000-01-02')
         return self.times[0], self.times[-1]
+    
+    def scale_y(self, factor: float):
+        """Scale the y-axis by the given factor."""
+        if factor <= 0:
+            return
+        self.y_scale *= factor
+        # Ensure scale stays within reasonable bounds
+        self.y_scale = max(0.1, min(10.0, self.y_scale))
     
     def render(self, surface: pygame.Surface, time_scale: Optional[TimeScale], rect: pygame.Rect) -> None:
         if time_scale is None:
@@ -374,8 +383,14 @@ class ScalarDataSource(DataSource):
         unit_times = time_scale.to_unit(visible_times)
         x_coords = rect.left + unit_times * rect.width
         
-        # Normalize values to the rect height
-        norm_values = (visible_values - self.min_value) / self.range
+        # Calculate scaled range for y-axis
+        center_value = (self.min_value + self.max_value) / 2
+        scaled_range = self.range / self.y_scale
+        scaled_min = center_value - scaled_range / 2
+        scaled_max = center_value + scaled_range / 2
+        
+        # Normalize values to the rect height using scaled range
+        norm_values = (visible_values - scaled_min) / (scaled_max - scaled_min)
         y_coords = rect.bottom - norm_values * (rect.height - 20) - 10  # Leave margin
         
         # Draw the line
@@ -385,8 +400,8 @@ class ScalarDataSource(DataSource):
             
         # Draw axis labels with smaller font
         font = pygame.font.SysFont("Helvetica Neue", 12)  # Reduced from 16 to 12
-        min_label = font.render(f"{self.min_value:.2f}", True, TEXT_COLOR)
-        max_label = font.render(f"{self.max_value:.2f}", True, TEXT_COLOR)
+        min_label = font.render(f"{scaled_min:.2f}", True, TEXT_COLOR)
+        max_label = font.render(f"{scaled_max:.2f}", True, TEXT_COLOR)
         surface.blit(min_label, (rect.left + 5, rect.bottom - 20))
         surface.blit(max_label, (rect.left + 5, rect.top + 5))
 
@@ -416,11 +431,20 @@ class VectorDataSource(DataSource):
         self.min_value = np.min(values) if len(values) else 0
         self.max_value = np.max(values) if len(values) else 1
         self.range = max(self.max_value - self.min_value, 1e-9)  # Avoid division by zero
+        self.y_scale = 1.0  # Add y-axis scale factor
     
     def get_time_range(self) -> Tuple[np.datetime64, np.datetime64]:
         if len(self.times) == 0:
             return np.datetime64('2000-01-01'), np.datetime64('2000-01-02')
         return self.times[0], self.times[-1]
+    
+    def scale_y(self, factor: float):
+        """Scale the y-axis by the given factor."""
+        if factor <= 0:
+            return
+        self.y_scale *= factor
+        # Ensure scale stays within reasonable bounds
+        self.y_scale = max(0.1, min(10.0, self.y_scale))
     
     def render(self, surface: pygame.Surface, time_scale: Optional[TimeScale], rect: pygame.Rect) -> None:
         if time_scale is None:
@@ -445,13 +469,19 @@ class VectorDataSource(DataSource):
         unit_times = time_scale.to_unit(visible_times)
         x_coords = rect.left + unit_times * rect.width
         
+        # Calculate scaled range for y-axis
+        center_value = (self.min_value + self.max_value) / 2
+        scaled_range = self.range / self.y_scale
+        scaled_min = center_value - scaled_range / 2
+        scaled_max = center_value + scaled_range / 2
+        
         # Draw each dimension
         for dim in range(self.n_dims):
             # Get values for this dimension
             dim_values = visible_values[:, dim] if visible_values.ndim > 1 else visible_values
             
-            # Normalize values to the rect height
-            norm_values = (dim_values - self.min_value) / self.range
+            # Normalize values to the rect height using scaled range
+            norm_values = (dim_values - scaled_min) / (scaled_max - scaled_min)
             y_coords = rect.bottom - norm_values * (rect.height - 20) - 10  # Leave margin
             
             # Draw the line
@@ -473,6 +503,12 @@ class VectorDataSource(DataSource):
             text = font.render(self.dim_names[dim], True, TEXT_COLOR)
             surface.blit(text, (legend_x + 25, legend_y - text.get_height() // 2))
             legend_y += 20
+            
+        # Draw y-axis labels
+        min_label = font.render(f"{scaled_min:.2f}", True, TEXT_COLOR)
+        max_label = font.render(f"{scaled_max:.2f}", True, TEXT_COLOR)
+        surface.blit(min_label, (rect.left + 5, rect.bottom - 20))
+        surface.blit(max_label, (rect.left + 5, rect.top + 5))
 
 class ImageDataSource(DataSource):
     """A data source for images over time."""
@@ -1078,7 +1114,7 @@ class Channel:
                 return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
             else:
                 # For thumbnail channel, use thumbnail height plus margins
-                return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
+                return self.data_source.thumbnail_size[1] + 40
         elif self.annotation_channel:
             return max(self.min_annotation_height, 100)  # Ensure minimum height for annotation channels
         else:
@@ -1097,6 +1133,25 @@ class Channel:
             if button_rect.collidepoint(mouse_x, mouse_y):
                 self.collapsed = not self.collapsed
                 return True
+            
+            # Check for y+ button (only for scalar/vector data sources)
+            if isinstance(self.data_source, (ScalarDataSource, VectorDataSource)):
+                y_plus_rect = pygame.Rect(self.rect.right - 50, self.rect.top + 5, 20, 20)
+                if y_plus_rect.collidepoint(mouse_x, mouse_y):
+                    self.data_source.scale_y(1.2)  # Zoom in by 20%
+                    return True
+                
+                # Check for y reset button
+                y_reset_rect = pygame.Rect(self.rect.right - 75, self.rect.top + 5, 20, 20)
+                if y_reset_rect.collidepoint(mouse_x, mouse_y):
+                    self.data_source.y_scale = 1.0  # Reset to default scale
+                    return True
+                
+                # Check for y- button
+                y_minus_rect = pygame.Rect(self.rect.right - 100, self.rect.top + 5, 20, 20)
+                if y_minus_rect.collidepoint(mouse_x, mouse_y):
+                    self.data_source.scale_y(0.8)  # Zoom out by 20%
+                    return True
             
             # Check for display mode toggle button (only for ImageDataSource)
             if isinstance(self.data_source, ImageDataSource) and self.data_source.max_images_in_view > 1:
@@ -1147,6 +1202,41 @@ class Channel:
             pygame.draw.line(surface, TEXT_COLOR,
                            (button_rect.centerx - 5, button_rect.centery),
                            (button_rect.centerx + 5, button_rect.centery), 1)
+        
+        # Draw y+ and y- buttons for scalar/vector data sources
+        if isinstance(self.data_source, (ScalarDataSource, VectorDataSource)):
+            # Draw y+ button
+            y_plus_rect = pygame.Rect(self.rect.right - 50, self.rect.top + 5, 20, 20)
+            pygame.draw.rect(surface, GRID_COLOR, y_plus_rect, 1)
+            # Draw up arrow
+            pygame.draw.line(surface, TEXT_COLOR,
+                           (y_plus_rect.centerx - 5, y_plus_rect.centery + 3),
+                           (y_plus_rect.centerx, y_plus_rect.centery - 3), 1)
+            pygame.draw.line(surface, TEXT_COLOR,
+                           (y_plus_rect.centerx + 5, y_plus_rect.centery + 3),
+                           (y_plus_rect.centerx, y_plus_rect.centery - 3), 1)
+            
+            # Draw y reset button
+            y_reset_rect = pygame.Rect(self.rect.right - 75, self.rect.top + 5, 20, 20)
+            pygame.draw.rect(surface, GRID_COLOR, y_reset_rect, 1)
+            # Draw "Y" text
+            y_font = pygame.font.SysFont("Helvetica Neue", 12)
+            y_text = y_font.render("Y", True, TEXT_COLOR)
+            surface.blit(y_text, (
+                y_reset_rect.centerx - y_text.get_width() // 2,
+                y_reset_rect.centery - y_text.get_height() // 2
+            ))
+            
+            # Draw y- button
+            y_minus_rect = pygame.Rect(self.rect.right - 100, self.rect.top + 5, 20, 20)
+            pygame.draw.rect(surface, GRID_COLOR, y_minus_rect, 1)
+            # Draw down arrow
+            pygame.draw.line(surface, TEXT_COLOR,
+                           (y_minus_rect.centerx - 5, y_minus_rect.centery - 3),
+                           (y_minus_rect.centerx, y_minus_rect.centery + 3), 1)
+            pygame.draw.line(surface, TEXT_COLOR,
+                           (y_minus_rect.centerx + 5, y_minus_rect.centery - 3),
+                           (y_minus_rect.centerx, y_minus_rect.centery + 3), 1)
         
         # Draw display mode toggle button for thumbnail channels
         if isinstance(self.data_source, ImageDataSource) and self.data_source.max_images_in_view > 1:
