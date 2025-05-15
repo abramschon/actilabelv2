@@ -44,7 +44,7 @@ These can also be found in the pyproject.toml file.
 We provide a command line interface to help label studies with wearable camera and sensor data:
 
 ```bash
-uv run label_study.py --config project_config.yaml --images /path/to/images --cwa /path/to/data.cwa --output /path/to/output
+uv run label_study --config project_config.yaml --images /path/to/images --cwa /path/to/data.cwa --output /path/to/output
 ```
 
 Required arguments:
