@@ -1097,6 +1097,14 @@ class Channel:
             if button_rect.collidepoint(mouse_x, mouse_y):
                 self.collapsed = not self.collapsed
                 return True
+            
+            # Check for display mode toggle button (only for ImageDataSource)
+            if isinstance(self.data_source, ImageDataSource) and self.data_source.max_images_in_view > 1:
+                mode_button_rect = pygame.Rect(self.rect.right - 50, self.rect.top + 5, 20, 20)
+                if mode_button_rect.collidepoint(mouse_x, mouse_y):
+                    # Toggle between grid and centered modes
+                    self.data_source.display_mode = "centered" if self.data_source.display_mode == "grid" else "grid"
+                    return True
                 
             # Handle click in header (select channel)
             header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, self.header_height)
@@ -1139,6 +1147,20 @@ class Channel:
             pygame.draw.line(surface, TEXT_COLOR,
                            (button_rect.centerx - 5, button_rect.centery),
                            (button_rect.centerx + 5, button_rect.centery), 1)
+        
+        # Draw display mode toggle button for thumbnail channels
+        if isinstance(self.data_source, ImageDataSource) and self.data_source.max_images_in_view > 1:
+            mode_button_rect = pygame.Rect(self.rect.right - 50, self.rect.top + 5, 20, 20)
+            pygame.draw.rect(surface, GRID_COLOR, mode_button_rect, 1)
+            
+            # Draw mode indicator (G for grid, C for centered)
+            mode_text = "G" if self.data_source.display_mode == "grid" else "C"
+            mode_font = pygame.font.SysFont("Helvetica Neue", 12)
+            mode_surface = mode_font.render(mode_text, True, TEXT_COLOR)
+            surface.blit(mode_surface, (
+                mode_button_rect.centerx - mode_surface.get_width() // 2,
+                mode_button_rect.centery - mode_surface.get_height() // 2
+            ))
         
         # Draw content if not collapsed
         if not self.collapsed:
