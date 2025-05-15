@@ -143,6 +143,7 @@ def create_example_dataset():
             image_paths,
             thumbnail_size=(300, 300),
             max_images_in_view=1,
+            display_mode="grid",
         ),
         ImageDataSource(
             "Thumbnail",
@@ -150,6 +151,7 @@ def create_example_dataset():
             image_paths,
             thumbnail_size=(320, 150),
             max_images_in_view=10,
+            display_mode="grid",
         ),
         VectorDataSource(
             "Accelerometer",

@@ -24,6 +24,7 @@ display_settings:
   thumbnails:
     size: [100, 100]  # Width and height of thumbnail images
     max_images: 20    # Number of thumbnail images to show
+    display_mode: "grid"  # How to position thumbnails: "grid" (fixed grid with lines) or "centered" (centered over timestamps)
 
 # Annotation channels and their possible labels
 annotation_channels:

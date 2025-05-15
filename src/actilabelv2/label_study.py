@@ -147,6 +147,7 @@ def main():
                 image_paths,
                 thumbnail_size=tuple(display_settings['thumbnails']['size']),
                 max_images_in_view=display_settings['thumbnails']['max_images'],
+                display_mode=display_settings['thumbnails'].get('display_mode', 'centered'),
             ),
         ])
 

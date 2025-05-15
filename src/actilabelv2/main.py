@@ -482,11 +482,13 @@ class ImageDataSource(DataSource):
                  times: np.ndarray, 
                  image_paths: List[str], 
                  thumbnail_size: Tuple[int, int] = (100, 100),
-                 max_images_in_view: int = 10):
+                 max_images_in_view: int = 10,
+                 display_mode: str = "grid"):  # Add display_mode parameter
         super().__init__(name)
         self.times = times
         self.image_paths = image_paths
         self.max_images_in_view = max_images_in_view
+        self.display_mode = display_mode  # Store display mode
         
         # Calculate thumbnail size maintaining aspect ratio
         if image_paths:
@@ -643,15 +645,24 @@ class ImageDataSource(DataSource):
                        (rect.width - (len(display_indices) + 1) * img_margin) // len(display_indices))
         img_height = int(img_width * self.thumbnail_size[1] / self.thumbnail_size[0])
         
-        # Calculate x positions for images
+        # Calculate x positions for images based on display mode
         if len(display_indices) == 1:
             # Center single image
             x_pos = rect.centerx - img_width // 2
             image_positions = [x_pos]
         else:
-            # Calculate evenly spaced x positions for multiple images
-            spacing = (rect.width - img_width) / (len(display_indices) - 1) if len(display_indices) > 1 else 0
-            image_positions = [rect.left + i * spacing for i in range(len(display_indices))]
+            if self.display_mode == "grid":
+                # Calculate evenly spaced x positions for multiple images
+                spacing = (rect.width - img_width) / (len(display_indices) - 1) if len(display_indices) > 1 else 0
+                image_positions = [rect.left + i * spacing for i in range(len(display_indices))]
+            else:  # centered mode
+                # Position images centered over their timestamps
+                image_positions = []
+                for idx in display_indices:
+                    time = self.times[idx]
+                    time_unit = time_scale.to_unit(np.array([time]))[0]
+                    time_x = rect.left + time_unit * rect.width
+                    image_positions.append(time_x - img_width // 2)
         
         # Draw images and timestamps
         for i, (idx, x_pos) in enumerate(zip(display_indices, image_positions)):
@@ -683,18 +694,20 @@ class ImageDataSource(DataSource):
             time_unit = time_scale.to_unit(np.array([time]))[0]
             time_x = rect.left + time_unit * rect.width
             
-            # Draw connection line from image to timestamp
-            timeline_y = rect.bottom - timeline_height // 2
-            pygame.draw.line(surface, CURSOR_COLOR,
-                           (x_pos + img_width // 2, y + img_height),  # Bottom center of image
-                           (time_x, timeline_y),  # Timeline position
-                           1)
+            # Draw connection line from image to timestamp only in grid mode
+            if self.display_mode == "grid":
+                timeline_y = rect.bottom - timeline_height // 2
+                pygame.draw.line(surface, CURSOR_COLOR,
+                               (x_pos + img_width // 2, y + img_height),  # Bottom center of image
+                               (time_x, timeline_y),  # Timeline position
+                               1)
             
             # Draw timestamp marker
+            timeline_y = rect.bottom - timeline_height // 2
             pygame.draw.circle(surface, CURSOR_COLOR, (int(time_x), timeline_y), 3)
             
             # Draw time label with smaller font
-            font = pygame.font.SysFont("Helvetica Neue", 12)  # Reduced from 14 to 12
+            font = pygame.font.SysFont("Helvetica Neue", 12)
             time_text = time_scale.time_to_str(time)[11:19]  # Just HH:MM:SS
             text = font.render(time_text, True, TEXT_COLOR)
             text_x = max(rect.left, min(rect.right - text.get_width(),
