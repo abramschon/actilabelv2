@@ -14,7 +14,7 @@ timestamp_format:
 #   "00:30:00"    # 30 minutes delay
 #   "00:00:30"    # 30 seconds delay
 #   "00:00:00.500" # 500 milliseconds delay
-time_offset: "01:00:00"
+time_offset: "00:00:00"
 
 # Display settings for images
 display_settings:
