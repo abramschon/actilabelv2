@@ -3,7 +3,7 @@ import os
 import numpy as np
 from PIL import Image
 import colorsys
-from main import AnnotationTool, VectorDataSource, ScalarDataSource, ImageDataSource, AnnotationChannel
+from actilabelv2.main import AnnotationTool, VectorDataSource, ScalarDataSource, ImageDataSource, AnnotationChannel
 import glob
 from datetime import datetime
 import argparse

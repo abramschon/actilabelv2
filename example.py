@@ -2,7 +2,7 @@ import os
 import numpy as np
 from PIL import Image
 import colorsys
-from main import AnnotationTool, VectorDataSource, ScalarDataSource, ImageDataSource, AnnotationChannel
+from actilabelv2.main import AnnotationTool, VectorDataSource, ScalarDataSource, ImageDataSource, AnnotationChannel
 
 def generate_color_image(size=(640, 480), hue=0.0):
     """Generate a color image with the given hue."""
