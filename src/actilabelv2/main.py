@@ -825,17 +825,18 @@ class ImageDataSource(DataSource):
                                (time_x, timeline_y),  # Timeline position
                                1)
             
-            # Draw timestamp marker
-            timeline_y = rect.bottom - timeline_height // 2
-            pygame.draw.circle(surface, CURSOR_COLOR, (int(time_x), timeline_y), 3)
-            
-            # Draw time label with smaller font
-            font = pygame.font.SysFont("Helvetica Neue", 12)
-            time_text = time_scale.time_to_str(time)[11:19]  # Just HH:MM:SS
-            text = font.render(time_text, True, TEXT_COLOR)
-            text_x = max(rect.left, min(rect.right - text.get_width(),
-                                      time_x - text.get_width() // 2))
-            surface.blit(text, (text_x, timeline_y + 5))
+            # Draw timestamp marker and label only if in visible range or grid mode
+            if self.display_mode == "grid" or (time_unit >= 0 and time_unit <= 1):
+                timeline_y = rect.bottom - timeline_height // 2
+                pygame.draw.circle(surface, CURSOR_COLOR, (int(time_x), timeline_y), 3)
+                
+                # Draw time label with smaller font
+                font = pygame.font.SysFont("Helvetica Neue", 12)
+                time_text = time_scale.time_to_str(time)[11:19]  # Just HH:MM:SS
+                text = font.render(time_text, True, TEXT_COLOR)
+                text_x = max(rect.left, min(rect.right - text.get_width(),
+                                          time_x - text.get_width() // 2))
+                surface.blit(text, (text_x, timeline_y + 5))
         
         # Draw timeline
         timeline_y = rect.bottom - timeline_height // 2
@@ -1239,8 +1240,10 @@ class Channel:
             if isinstance(self.data_source, ImageDataSource) and self.data_source.max_images_in_view > 1:
                 mode_button_rect = pygame.Rect(self.rect.right - 50, self.rect.top + 5, 20, 20)
                 if mode_button_rect.collidepoint(mouse_x, mouse_y):
-                    # Toggle between grid and centered modes
-                    self.data_source.display_mode = "centered" if self.data_source.display_mode == "grid" else "grid"
+                    # Only toggle mode if we have more than one image in view
+                    if len(self.data_source.times) > 1:
+                        # Toggle between grid and centered modes
+                        self.data_source.display_mode = "centered" if self.data_source.display_mode == "grid" else "grid"
                     return True
                 
             # Handle click in header (select channel)
