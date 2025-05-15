@@ -526,27 +526,17 @@ class ImageDataSource(DataSource):
         self.max_images_in_view = max_images_in_view
         self.display_mode = display_mode  # Store display mode
         self.buffer_images = 2  # Number of images to show in buffer on each side
+        self.target_thumbnail_size = thumbnail_size  # Store target size for reference
         
-        # Calculate thumbnail size maintaining aspect ratio
+        # Calculate initial aspect ratio from first image
+        self.aspect_ratio = 1.0  # Default to square
         if image_paths:
-            # Load first image to get aspect ratio
             try:
                 with Image.open(image_paths[0]) as img:
                     width, height = img.size
-                    aspect_ratio = width / height
-                    
-                    # Set thumbnail size based on aspect ratio
-                    if width > height:
-                        # Image is wider than tall
-                        self.thumbnail_size = (thumbnail_size[0], int(thumbnail_size[0] / aspect_ratio))
-                    else:
-                        # Image is taller than wide
-                        self.thumbnail_size = (int(thumbnail_size[1] * aspect_ratio), thumbnail_size[1])
+                    self.aspect_ratio = width / height
             except Exception as e:
                 print(f"Error loading image for aspect ratio: {e}")
-                self.thumbnail_size = thumbnail_size
-        else:
-            self.thumbnail_size = thumbnail_size
         
         # LRU Cache implementation
         self.thumbnail_cache_size = 100  # Maximum number of thumbnails to keep in memory
@@ -558,7 +548,38 @@ class ImageDataSource(DataSource):
         self.preload_count = min(20, len(image_paths))
         self.load_thread = threading.Thread(target=self._preload_thumbnails, daemon=True)
         self.load_thread.start()
-    
+
+    def _calculate_image_dimensions(self, rect_width: int, img_margin: int) -> Tuple[int, int]:
+        """Calculate image dimensions based on available space and max_images_in_view."""
+        # Add extra space on the right for the mode toggle button
+        button_width = 50  # Space for mode toggle button
+        available_width = rect_width - button_width
+        
+        # Calculate maximum width based on available space and number of images
+        max_width = (available_width - (self.max_images_in_view + 1) * img_margin) // self.max_images_in_view
+        
+        # Calculate height based on aspect ratio
+        if self.aspect_ratio > 1:  # Wider than tall
+            width = min(max_width, self.target_thumbnail_size[0])
+            height = int(width / self.aspect_ratio)
+        else:  # Taller than wide
+            height = min(self.target_thumbnail_size[1], 
+                        int(max_width / self.aspect_ratio))
+            width = int(height * self.aspect_ratio)
+        
+        return width, height
+
+    def get_height(self) -> int:
+        """Get the height needed for this channel based on image dimensions."""
+        # Calculate image dimensions based on a default width (will be adjusted in render)
+        width, height = self._calculate_image_dimensions(800, 5)  # Use reasonable default width
+        
+        # Add space for buttons at top, timeline, and connection lines
+        top_margin = 40  # Space for buttons at top
+        timeline_height = 40  # Height for timeline
+        connection_height = 40  # Extra space for connection lines
+        return height + top_margin + timeline_height + connection_height
+
     def _preload_thumbnails(self):
         """Preload thumbnails in background thread."""
         for i, path in enumerate(self.image_paths[:self.preload_count]):
@@ -589,11 +610,11 @@ class ImageDataSource(DataSource):
             
             if width > height:
                 # Image is wider than tall
-                new_width = self.thumbnail_size[0]
+                new_width = self.target_thumbnail_size[0]
                 new_height = int(new_width / aspect_ratio)
             else:
                 # Image is taller than wide
-                new_height = self.thumbnail_size[1]
+                new_height = self.target_thumbnail_size[1]
                 new_width = int(new_height * aspect_ratio)
             
             # Resize image maintaining aspect ratio
@@ -635,6 +656,31 @@ class ImageDataSource(DataSource):
         
         return None
     
+    def _select_balanced_images(self, indices: np.ndarray, n_images: int) -> np.ndarray:
+        """Select n_images evenly distributed across the time range.
+        
+        Args:
+            indices: Array of image indices in the visible range
+            n_images: Number of images to select
+            
+        Returns:
+            Array of selected indices
+        """
+        if len(indices) <= n_images:
+            return indices
+            
+        # Calculate the time chunks
+        chunk_size = len(indices) / (n_images + 1)
+        
+        # Select the middle point of each chunk
+        selected_indices = []
+        for i in range(n_images):
+            # Calculate the middle point of this chunk
+            chunk_middle = int((i + 0.5) * chunk_size)
+            selected_indices.append(indices[chunk_middle])
+            
+        return np.array(selected_indices)
+
     def render(self, surface: pygame.Surface, time_scale: Optional[TimeScale], rect: pygame.Rect) -> None:
         """Render the image data source."""
         if time_scale is None:
@@ -668,12 +714,8 @@ class ImageDataSource(DataSource):
                 display_indices = visible_indices
         else:  # Thumbnail channel
             if self.display_mode == "grid":
-                # Downsample visible images if there are too many
-                if len(visible_indices) > self.max_images_in_view:
-                    step = len(visible_indices) // self.max_images_in_view
-                    display_indices = visible_indices[::step][:self.max_images_in_view]
-                else:
-                    display_indices = visible_indices
+                # Use balanced selection for grid mode
+                display_indices = self._select_balanced_images(visible_indices, self.max_images_in_view)
             else:  # centered mode
                 # Find images in visible range plus buffer on both sides
                 buffer_time = (time_scale.max_time - time_scale.min_time) * 0.2  # 20% buffer on each side
@@ -690,27 +732,20 @@ class ImageDataSource(DataSource):
                 total_images = self.max_images_in_view + (2 * self.buffer_images)
                 
                 if len(buffered_indices) > total_images:
-                    # Calculate step size to get exactly total_images
-                    step = len(buffered_indices) // total_images
-                    display_indices = buffered_indices[::step][:total_images]
+                    # Use balanced selection for buffered images too
+                    display_indices = self._select_balanced_images(buffered_indices, total_images)
                 else:
                     display_indices = buffered_indices
         
         # Calculate layout
         img_margin = 5
-        timeline_height = 40  # Height reserved for timeline
-        img_area_height = rect.height - timeline_height
+        top_margin = 40  # Space for buttons at top
+        timeline_height = 40  # Height for timeline
+        connection_height = 40  # Extra space for connection lines
+        img_area_height = rect.height - top_margin - timeline_height - connection_height
         
-        # Calculate fixed image width based on max_images_in_view (not including buffer)
-        if self.display_mode == "centered":
-            # Use max_images_in_view for width calculation to maintain stable size
-            img_width = min(self.thumbnail_size[0], 
-                          (rect.width - (self.max_images_in_view + 1) * img_margin) // self.max_images_in_view)
-        else:
-            img_width = min(self.thumbnail_size[0], 
-                          (rect.width - (len(display_indices) + 1) * img_margin) // len(display_indices))
-            
-        img_height = int(img_width * self.thumbnail_size[1] / self.thumbnail_size[0])
+        # Calculate image dimensions based on available space
+        img_width, img_height = self._calculate_image_dimensions(rect.width, img_margin)
         
         # Calculate x positions for images based on display mode
         if len(display_indices) == 1:
@@ -720,7 +755,7 @@ class ImageDataSource(DataSource):
         else:
             if self.display_mode == "grid":
                 # Calculate evenly spaced x positions for multiple images
-                spacing = (rect.width - img_width) / (len(display_indices) - 1) if len(display_indices) > 1 else 0
+                spacing = (rect.width - img_width - 50) / (len(display_indices) - 1) if len(display_indices) > 1 else 0
                 image_positions = [rect.left + i * spacing for i in range(len(display_indices))]
             else:  # centered mode
                 # Position images centered over their timestamps
@@ -737,7 +772,7 @@ class ImageDataSource(DataSource):
             path = self.image_paths[idx]
             
             # Calculate image position
-            y = rect.top + (img_area_height - img_height) // 2
+            y = rect.top + top_margin + (img_area_height - img_height) // 2
             
             # Calculate alpha based on position relative to visible window
             alpha = 255
@@ -1160,13 +1195,8 @@ class Channel:
         if self.collapsed:
             return self.header_height  # Only show header when collapsed
         elif isinstance(self.data_source, ImageDataSource):
-            # Calculate height based on thumbnail size and aspect ratio
-            if self.data_source.max_images_in_view == 1:
-                # For preview channel, use full thumbnail height plus margins
-                return self.data_source.thumbnail_size[1] + 60  # Add extra space for timeline
-            else:
-                # For thumbnail channel, use thumbnail height plus margins
-                return self.data_source.thumbnail_size[1] + 40
+            # Use the data source's get_height method
+            return self.data_source.get_height()
         elif self.annotation_channel:
             return max(self.min_annotation_height, 100)  # Ensure minimum height for annotation channels
         else:
