@@ -30,7 +30,7 @@ If it is a previously labelled participant, it should reload the existing labels
 If it is a new participant, it should set up the intial labels based on the elsa_blip2_annotations.pkl file.
     
 """
-
+import re
 import os
 import pandas as pd
 import numpy as np
