@@ -85,7 +85,7 @@ def main():
                 "Preview",
                 np.array(image_times),
                 image_paths,
-                thumbnail_size=(800, 600),
+                thumbnail_size=(400, 300),
                 max_images_in_view=1,
                 display_mode='grid',
             ),
