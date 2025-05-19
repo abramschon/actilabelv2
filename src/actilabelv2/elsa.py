@@ -1,36 +1,3 @@
-"""
-Tailored application for labelling the ELSA dataset.
-
-This raw-data for this data-set has the following structure:
-- labels/
-    - elsa_blip2_annotations.pkl
-    - /<participant label folders to be created>
-- raw-axivity-accFiles/
-    - participant_10<2 digit number>_axivity_data.CWA.gz
-    - ...
-- raw-camera-images/
-    - camera_participant_10<2 digit number>/
-        - B..._2..._20211201_120000E.JPG
-        - ...
-
-This application will create folders for each participant with data in the raw-camera-images directory and raw-axivity-accFiles directory
-where we can store the labels saved by the actilabelv2 application.
-It will also read in the elsa_blip2_annotations.pkl file to initialize the outdoor/indoor labels.
-This file has the following structure:
-- id: participant id
-- time: timestamp of the image
-- blip2_label: 'outdoor' or 'indoor'
-
-So when loading in the data for an unlabeled participant, we need to initialse the labels for the outdoor/indoor channel by
-reading in the elsa_blip2_annotations.pkl file, selecting the participant id, and getting the label-time stamps.
-To convert the image timestamps to label ranges, use the spread_label_time function.
-
-Ultimately, I want a CLI which displays the list of participants which have/have not been labelled yet, and prompts the user which participant they would like to label.
-If it is a previously labelled participant, it should reload the existing labels.
-If it is a new participant, it should set up the intial labels based on the elsa_blip2_annotations.pkl file.
-    
-"""
-#%%
 import re
 import os
 import pandas as pd
@@ -44,7 +11,6 @@ import actipy
 from actilabelv2.main import AnnotationTool, ImageDataSource, AnnotationChannel, Annotation, VectorDataSource, ScalarDataSource
 
 
-#%%
 def main():
     """Main CLI entry point."""
     # Get base directory from environment or use default
@@ -280,7 +246,6 @@ def load_blip2_annotations(base_dir: str) -> pd.DataFrame:
         return pickle.load(f)
     
 
-#%%
 def spread_label_time(
     labels: np.ndarray,
     times: np.ndarray,
@@ -395,6 +360,8 @@ def create_initial_labels(base_dir: str, participant_id: int) -> bool:
     """
     # Load blip2 annotations
     blip2_df = load_blip2_annotations(base_dir)
+
+    blip2_df['blip2_label'] = blip2_df['blip2_label'].replace({'indoors': 'indoor', 'outdoors': 'outdoor'})
     
     # Filter for this participant
     participant_df = blip2_df[blip2_df['id'] == participant_id].copy()
@@ -411,7 +378,7 @@ def create_initial_labels(base_dir: str, participant_id: int) -> bool:
     times = participant_df['time'].values
     
     # Spread labels
-    labels, start_times, end_times = spread_label_time(labels, times, max_left_secs=0, max_right_secs=10)
+    labels, start_times, end_times = spread_label_time(labels, times, max_left_secs=0, max_right_secs=180)
     
     # Save to Outdoor.csv 
     init_df = pd.DataFrame(
