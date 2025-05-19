@@ -1,5 +1,7 @@
 import re
 import os
+import gzip
+import shutil
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -106,11 +108,7 @@ def main():
         if acc_path:
             try:
                 print(f"Loading sensor data from {acc_path}")
-                data, info = actipy.read_device(acc_path,
-                                              lowpass_hz=20,
-                                              calibrate_gravity=True,
-                                              detect_nonwear=True,
-                                              resample_hz=50)
+                data, info = load_sensor_data(acc_path)
                 
                 # Convert index to numpy datetime64
                 sensor_times = data.index.values.astype(np.datetime64)
@@ -171,6 +169,40 @@ def main():
 
         break # break out of the loop if you have annotated someone
 
+def load_sensor_data(acc_path: str,
+                     lowpass_hz: float = 20,
+                     calibrate_gravity: bool = True,
+                     detect_nonwear: bool = True,
+                     resample_hz: int = 50):
+    """
+    Decompress .CWA.gz if needed, then load with actipy.read_device.
+    Returns: (data, info)
+    """
+    p = Path(acc_path)
+    
+    # If it's a .gz file, decompress alongside the original
+    if p.suffix.lower() == ".gz":
+        cwa_path = p.with_suffix("")  # drops the .gz
+        if not cwa_path.exists():
+            print(f"Decompressing {p.name} → {cwa_path.name}…")
+            with gzip.open(p, "rb") as f_in, open(cwa_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        else:
+            # already decompressed
+            cwa_path = cwa_path
+    else:
+        cwa_path = p
+
+    # Now load with actipy
+    print(f"Loading sensor data from {cwa_path}")
+    data, info = actipy.read_device(
+        str(cwa_path),
+        lowpass_hz=lowpass_hz,
+        calibrate_gravity=calibrate_gravity,
+        detect_nonwear=detect_nonwear,
+        resample_hz=resample_hz
+    )
+    return data, info
 
 def get_participant_list(base_dir: str) -> Tuple[List[str], List[str]]:
     """Get lists of labeled and unlabeled participants.
