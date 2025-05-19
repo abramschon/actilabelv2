@@ -2266,7 +2266,7 @@ class AnnotationTool:
         
         # Check if cursor time falls within any existing annotation
         for ann in selected_channel.annotation_channel.annotations:
-            if ann.start_time <= current_time <= ann.end_time:
+            if ann.start_time < current_time <= ann.end_time:
                 self.logger.warning(f"Cannot create annotation: cursor overlaps with existing annotation '{ann.label}'")
                 return
         
