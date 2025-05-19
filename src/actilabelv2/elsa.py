@@ -1,7 +1,5 @@
 import re
 import os
-import gzip
-import shutil
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -108,7 +106,11 @@ def main():
         if acc_path:
             try:
                 print(f"Loading sensor data from {acc_path}")
-                data, info = load_sensor_data(acc_path)
+                data, info = actipy.read_device(acc_path,
+                                              lowpass_hz=20,
+                                              calibrate_gravity=True,
+                                              detect_nonwear=True,
+                                              resample_hz=30)
                 
                 # Convert index to numpy datetime64
                 sensor_times = data.index.values.astype(np.datetime64)
@@ -170,62 +172,6 @@ def main():
         break # break out of the loop if you have annotated someone
 
 
-import gzip
-import shutil
-from pathlib import Path
-import actipy
-
-def load_sensor_data(acc_path: str,
-                     lowpass_hz: float = 20,
-                     calibrate_gravity: bool = True,
-                     detect_nonwear: bool = True,
-                     resample_hz: int = 50):
-    """
-    Decompress .CWA.gz if needed (in-place, next to the .gz),
-    then load with actipy.read_device using the original drive-letter path,
-    so we don’t end up with a \\UNC\\… path.
-    """
-    # 1) Normalize separators but do NOT resolve to UNC
-    p = Path(acc_path.replace("\\", "/"))
-    
-    # 2) Handle .gz → .CWA
-    if p.suffix.lower() == ".gz":
-        cwa_path = p.with_suffix("")  # drops the .gz
-        if not cwa_path.exists():
-            print(f"Decompressing {p.name} → {cwa_path.name} …")
-            with gzip.open(str(p), "rb") as f_in, open(str(cwa_path), "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
-        else:
-            print(f"Found existing decompressed file: {cwa_path.name}")
-    else:
-        cwa_path = p
-
-    # 3) Double-check the .CWA really is there
-    if not cwa_path.exists():
-        raise FileNotFoundError(f"Expected CWA file not found at {cwa_path}")
-
-    # 4) Call actipy with the drive-letter path
-    cwa_str = str(cwa_path)
-    print("About to open:", repr(cwa_str))
-    print("Exists:", os.path.exists(cwa_str), "Size:", os.path.getsize(cwa_str))
-    with open(cwa_str, "rb") as f:
-        print("First 16 bytes:", f.read(16))
-
-    print(f"Loading sensor data from {cwa_str}")
-    try:
-        data, info = actipy.read_device(
-            cwa_str,
-            lowpass_hz=lowpass_hz,
-            calibrate_gravity=calibrate_gravity,
-            detect_nonwear=detect_nonwear,
-            resample_hz=resample_hz
-        )
-    except FileNotFoundError:
-        # If it still fails, we'll see exactly what string was used
-        print(f"Error loading sensor data; tried to open: {cwa_str}")
-        raise
-
-    return data, info
 
 def get_participant_list(base_dir: str) -> Tuple[List[str], List[str]]:
     """Get lists of labeled and unlabeled participants.
