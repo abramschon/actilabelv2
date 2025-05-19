@@ -307,50 +307,48 @@ def spread_label_time(
 
     d_left = np.timedelta64(max_left_secs, "s")
     d_right = np.timedelta64(max_right_secs, "s")
-    start_times = times - d_left
-    end_times = times + d_right
-
-    # find where the labels are the same
-    labels_same = labels[:-1] == labels[1:]
-    # find where the boundaries overlap
-    overlap = end_times[:-1] >= start_times[1:]
-
-    # do not keep labels that are the same and overlap
-    drop = labels_same & overlap
-    labels = np.insert(labels[1:][~drop], 0, labels[0])
-    start_times = np.insert(start_times[1:][~drop], 0, start_times[0])
-
-    end_times = np.append(end_times[:-1][~drop], end_times[-1])
-
-    # calculate the mid-point between labels
-    dts = (end_times[:-1] - start_times[1:]) / 2  # note that this rounds down to the nearest second
-    avg_boundaries = start_times[1:] + dts
-
-    start_times[1:] = np.maximum(start_times[1:], avg_boundaries)
-    end_times[:-1] = np.minimum(end_times[:-1], avg_boundaries)
-
-    return (labels, start_times, end_times)
-
-
-time = np.datetime64("2020-01-01T00:00:00")
-times = []
-labels = []
-for i in range(5):
-    if i > 3:
-        labels.append("a")
-    else:
-        labels.append("b")
-    time += np.timedelta64(i, "s")
-    times.append(
-        time
-    )
-
-ls, st, et = spread_label_time(
-    np.array(labels), np.array(times), 0, 3
-)
     
+    # Initial segment bounds 
+    merged_labels = []
+    merged_starts = [times[0] - d_left]
+    merged_ends = []
 
-#%%
+    for i in range(len(labels) - 1):
+        current_label = labels[i]
+        next_label = labels[i+1]
+        
+        cl_end = times[i] + d_right
+        nl_start = times[i+1] - d_left
+
+        if current_label == next_label:
+            if cl_end < nl_start:
+                merged_labels.append(current_label)
+                merged_ends.append(cl_end)
+                merged_starts.append(nl_start)
+            else: # overlapping
+                continue
+        else: # different labels
+            if cl_end < nl_start:
+                merged_labels.append(current_label)
+                merged_ends.append(cl_end)
+                merged_starts.append(nl_start)
+            else: # overlapping
+                avg = nl_start + (cl_end - nl_start) / 2
+                change = min(avg, times[i+1])
+                change = max(change, times[i])
+                merged_labels.append(current_label)
+                merged_ends.append(change)
+                merged_starts.append(change)
+    merged_ends.append(times[-1] + d_right)
+    merged_labels.append(labels[-1])
+
+    # Convert to arrays
+    labels = np.array(merged_labels)
+    start_times = np.array(merged_starts)
+    end_times = np.array(merged_ends)
+
+    return labels, start_times, end_times
+
 
 def get_participant_images(base_dir: str, participant_id: int) -> List[str]:
     """Get list of image paths for a participant.
