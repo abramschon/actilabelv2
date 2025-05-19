@@ -85,14 +85,15 @@ def main():
                 "Preview",
                 np.array(image_times),
                 image_paths,
-                thumbnail_size=(300, 500),
+                thumbnail_size=(800, 600),
                 max_images_in_view=1,
+                display_mode='grid',
             ),
             ImageDataSource(
                 "Thumbnails",
                 np.array(image_times),
                 image_paths,
-                thumbnail_size=(100, 150),
+                thumbnail_size=(100, 75),
                 max_images_in_view=10,
                 display_mode='centered',
             )

@@ -537,7 +537,7 @@ class ImageDataSource(DataSource):
                  name: str, 
                  times: np.ndarray, 
                  image_paths: List[str], 
-                 thumbnail_size: Tuple[int, int] = (100, 100),
+                 thumbnail_size: Tuple[int, int] = (100, 75), # width, height
                  max_images_in_view: int = 10,
                  display_mode: str = "centered"):  # Add display_mode parameter
         super().__init__(name)
