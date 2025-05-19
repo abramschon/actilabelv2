@@ -682,30 +682,48 @@ class ImageDataSource(DataSource):
         
         return None
     
-    def _select_balanced_images(self, indices: np.ndarray, n_images: int) -> np.ndarray:
-        """Select n_images evenly distributed across the time range.
-        
-        Args:
-            indices: Array of image indices in the visible range
-            n_images: Number of images to select
-            
-        Returns:
-            Array of selected indices
+    def _select_balanced_images(
+            self,
+            indices: np.ndarray,
+            n_images: int,
+            t_min: Optional[np.datetime64] = None,
+            t_max: Optional[np.datetime64] = None,
+        ) -> np.ndarray:
         """
+        From the given candidate indices, pick n_images whose times are
+        most evenly spread across the time‐span.
+
+        Args:
+            indices: Array of image indices in the visible (or buffered) range
+            n_images: Number of images to select
+
+        Returns:
+            Array of selected indices (a subset of the input indices)
+        """
+        # If we have fewer (or exactly the right number) of candidates, just return them all.
         if len(indices) <= n_images:
-            return indices
-            
-        # Calculate the time chunks
-        chunk_size = len(indices) / (n_images + 1)
-        
-        # Select the middle point of each chunk
-        selected_indices = []
-        for i in range(n_images):
-            # Calculate the middle point of this chunk
-            chunk_middle = int((i + 0.5) * chunk_size)
-            selected_indices.append(indices[chunk_middle])
-            
-        return np.array(selected_indices)
+            return indices.copy()
+
+        # Extract the actual times for these indices
+        times_subset = self.times[indices]
+
+        if t_min is None or t_max is None:
+            t_min, t_max = times_subset.min(), times_subset.max()
+
+
+        # Compute n_images equally spaced midpoints in [t_min, t_max]
+        # i runs 0..n_images-1; we want midpoints at (i+1)/(n_images+1)
+        targets = t_min + (np.arange(1, n_images + 1) / (n_images + 1)) * (t_max - t_min)
+
+        # For each target time, find the index in times_subset that's closest
+        selected = []
+        for target in targets:
+            # absolute difference
+            diffs = np.abs(times_subset - target)
+            best_local = np.argmin(diffs)
+            selected.append(indices[best_local])
+
+        return np.array(selected, dtype=int)
 
     def render(self, surface: pygame.Surface, time_scale: Optional[TimeScale], rect: pygame.Rect) -> None:
         """Render the image data source."""
@@ -726,42 +744,37 @@ class ImageDataSource(DataSource):
             surface.blit(text, (rect.centerx - text.get_width() // 2, rect.centery - text.get_height() // 2))
             return
             
-        # Get center time (cursor position)
-        center_time = time_scale.to_scale(0.5)
-        
-        # Handle preview vs thumbnail display
-        if self.max_images_in_view == 1:  # Preview channel
-            # Find the image closest to center time
-            if len(visible_indices) > 0:
-                time_diffs = np.abs(self.times[visible_indices] - center_time)
-                closest_idx = visible_indices[np.argmin(time_diffs)]
-                display_indices = [closest_idx]
+        if self.display_mode == "grid":
+            # Use balanced selection for grid mode
+            display_indices = self._select_balanced_images(
+                visible_indices, 
+                self.max_images_in_view,
+                t_min=time_scale.min_time,
+                t_max=time_scale.max_time)
+        else:  # centered mode
+            # Find images in visible range plus buffer on both sides
+            buffer_time = (time_scale.max_time - time_scale.min_time) * 0.2  # 20% buffer on each side
+            buffered_min_time = time_scale.min_time - buffer_time
+            buffered_max_time = time_scale.max_time + buffer_time
+            
+            buffered_mask = np.logical_and(
+                self.times >= buffered_min_time,
+                self.times <= buffered_max_time
+            )
+            buffered_indices = np.where(buffered_mask)[0]
+            
+            # Always show a fixed number of images (visible + buffer)
+            total_images = self.max_images_in_view + (2 * self.buffer_images)
+            
+            if len(buffered_indices) > total_images:
+                # Use balanced selection for buffered images too
+                display_indices = self._select_balanced_images(
+                    buffered_indices,
+                    total_images,
+                    t_min=time_scale.min_time,
+                    t_max=time_scale.max_time)
             else:
-                display_indices = visible_indices
-        else:  # Thumbnail channel
-            if self.display_mode == "grid":
-                # Use balanced selection for grid mode
-                display_indices = self._select_balanced_images(visible_indices, self.max_images_in_view)
-            else:  # centered mode
-                # Find images in visible range plus buffer on both sides
-                buffer_time = (time_scale.max_time - time_scale.min_time) * 0.2  # 20% buffer on each side
-                buffered_min_time = time_scale.min_time - buffer_time
-                buffered_max_time = time_scale.max_time + buffer_time
-                
-                buffered_mask = np.logical_and(
-                    self.times >= buffered_min_time,
-                    self.times <= buffered_max_time
-                )
-                buffered_indices = np.where(buffered_mask)[0]
-                
-                # Always show a fixed number of images (visible + buffer)
-                total_images = self.max_images_in_view + (2 * self.buffer_images)
-                
-                if len(buffered_indices) > total_images:
-                    # Use balanced selection for buffered images too
-                    display_indices = self._select_balanced_images(buffered_indices, total_images)
-                else:
-                    display_indices = buffered_indices
+                display_indices = buffered_indices
         
         # Calculate layout
         img_margin = 5
@@ -774,23 +787,30 @@ class ImageDataSource(DataSource):
         img_width, img_height = self._calculate_image_dimensions(rect.width, img_margin)
         
         # Calculate x positions for images based on display mode
-        if len(display_indices) == 1:
-            # Center single image
-            x_pos = rect.centerx - img_width // 2
-            image_positions = [x_pos]
-        else:
-            if self.display_mode == "grid":
-                # Calculate evenly spaced x positions for multiple images
-                spacing = (rect.width - img_width - 50) / (len(display_indices) - 1) if len(display_indices) > 1 else 0
-                image_positions = [rect.left + i * spacing for i in range(len(display_indices))]
-            else:  # centered mode
-                # Position images centered over their timestamps
-                image_positions = []
-                for idx in display_indices:
-                    time = self.times[idx]
-                    time_unit = time_scale.to_unit(np.array([time]))[0]
-                    time_x = rect.left + time_unit * rect.width
-                    image_positions.append(time_x - img_width // 2)
+        if self.display_mode == "grid":
+            n = len(display_indices)
+            # Number of segments = number of images
+            segment_width = rect.width / n
+
+            # Midpoints of each segment
+            midpoints = [
+                rect.left + segment_width * (i + 0.5)
+                for i in range(n)
+            ]
+
+            # Offset so each image is centered on its midpoint
+            image_positions = [
+                int(x - img_width / 2)
+                for x in midpoints
+            ]
+        else:  # centered mode
+            # Position images centered over their timestamps
+            image_positions = []
+            for idx in display_indices:
+                time = self.times[idx]
+                time_unit = time_scale.to_unit(np.array([time]))[0]
+                time_x = rect.left + time_unit * rect.width
+                image_positions.append(time_x - img_width // 2)
         
         # Draw images and timestamps
         for i, (idx, x_pos) in enumerate(zip(display_indices, image_positions)):
