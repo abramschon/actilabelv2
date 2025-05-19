@@ -543,7 +543,7 @@ class ImageDataSource(DataSource):
                  image_paths: List[str], 
                  thumbnail_size: Tuple[int, int] = (100, 100),
                  max_images_in_view: int = 10,
-                 display_mode: str = "grid"):  # Add display_mode parameter
+                 display_mode: str = "centered"):  # Add display_mode parameter
         super().__init__(name)
         self.times = times
         self.image_paths = image_paths
@@ -602,7 +602,13 @@ class ImageDataSource(DataSource):
         top_margin = 40  # Space for buttons at top
         timeline_height = 40  # Height for timeline
         connection_height = 40  # Extra space for connection lines
-        return height + top_margin + timeline_height + connection_height
+        
+        # Calculate total height needed
+        total_height = height + top_margin + timeline_height + connection_height
+        
+        # Ensure minimum height to prevent connection lines from disappearing
+        min_height = 200  # Minimum height to ensure connection lines are visible
+        return max(total_height, min_height)
 
     def _preload_thumbnails(self):
         """Preload thumbnails in background thread."""
@@ -1220,12 +1226,19 @@ class Channel:
         if self.collapsed:
             return self.header_height  # Only show header when collapsed
         elif isinstance(self.data_source, ImageDataSource):
-            # Use the data source's get_height method
+            # Use the data source's get_height method with current window width
             return self.data_source.get_height()
         elif self.annotation_channel:
             return max(self.min_annotation_height, 100)  # Ensure minimum height for annotation channels
         else:
             return self.min_content_height
+    
+    def resize(self, new_rect: pygame.Rect) -> None:
+        """Handle window resize by updating the channel's rectangle and recalculating heights."""
+        self.rect = new_rect
+        if isinstance(self.data_source, ImageDataSource):
+            # Force recalculation of image dimensions
+            self.data_source._calculate_image_dimensions(new_rect.width, 5)  # 5 is the default margin
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle mouse events. Returns True if event was handled."""
@@ -1393,6 +1406,22 @@ class ChannelView:
         self.is_dragging_scrollbar = False
         self.drag_start_y = 0
         self.drag_start_offset = 0
+    
+    def resize(self, new_rect: pygame.Rect) -> None:
+        """Handle window resize by updating the view's rectangle and recalculating channel positions."""
+        self.rect = new_rect
+        # Recalculate channel positions and heights
+        y = self.rect.top - self.scroll_offset
+        for channel in self.channels:
+            channel_height = self.get_channel_height(channel)
+            channel_rect = pygame.Rect(
+                self.rect.left + self.left_margin,
+                y,
+                self.rect.width - (self.left_margin + self.right_margin),
+                channel_height
+            )
+            channel.resize(channel_rect)
+            y += channel_height + self.padding
     
     def get_channel_height(self, channel: Channel) -> int:
         """Get the appropriate height for a channel based on its type and state."""
@@ -2023,7 +2052,7 @@ class AnnotationTool:
         if hasattr(self, 'time_scrubber') and self.time_scrubber:
             self.time_scrubber.rect = self.scrubber_rect
         if hasattr(self, 'channel_view') and self.channel_view:
-            self.channel_view.rect = self.channel_rect
+            self.channel_view.resize(self.channel_rect)  # Use resize instead of just updating rect
         if hasattr(self, 'label_editor') and self.label_editor:
             self.label_editor.rect = self.label_rect
             # Also update suggestion rect position if editor is active
