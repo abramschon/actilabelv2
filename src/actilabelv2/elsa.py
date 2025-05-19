@@ -169,39 +169,53 @@ def main():
 
         break # break out of the loop if you have annotated someone
 
+
 def load_sensor_data(acc_path: str,
                      lowpass_hz: float = 20,
                      calibrate_gravity: bool = True,
                      detect_nonwear: bool = True,
                      resample_hz: int = 50):
     """
-    Decompress .CWA.gz if needed, then load with actipy.read_device.
+    Decompress .CWA.gz if needed (next to the .gz),
+    then load with actipy.read_device, always pointing at the .CWA.
+
     Returns: (data, info)
     """
-    p = Path(acc_path)
+    # 1) Normalize the path and make it absolute
+    p = Path(acc_path).expanduser().resolve()
     
-    # If it's a .gz file, decompress alongside the original
+    # 2) If it's a .gz, plan to write foo.CWA next to it
     if p.suffix.lower() == ".gz":
         cwa_path = p.with_suffix("")  # drops the .gz
         if not cwa_path.exists():
-            print(f"Decompressing {p.name} → {cwa_path.name}…")
+            print(f"Decompressing {p.name} → {cwa_path.name} …")
             with gzip.open(p, "rb") as f_in, open(cwa_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
         else:
-            # already decompressed
-            cwa_path = cwa_path
+            print(f"Found existing decompressed file: {cwa_path.name}")
     else:
+        # Already a .CWA (or something else), use it directly
         cwa_path = p
 
-    # Now load with actipy
+    # Double-check that file is there
+    if not cwa_path.exists():
+        raise FileNotFoundError(f"Expected CWA file not found at {cwa_path}")
+
+    # 3) Load with ActiPy
     print(f"Loading sensor data from {cwa_path}")
-    data, info = actipy.read_device(
-        str(cwa_path),
-        lowpass_hz=lowpass_hz,
-        calibrate_gravity=calibrate_gravity,
-        detect_nonwear=detect_nonwear,
-        resample_hz=resample_hz
-    )
+    try:
+        data, info = actipy.read_device(
+            str(cwa_path),
+            lowpass_hz=lowpass_hz,
+            calibrate_gravity=calibrate_gravity,
+            detect_nonwear=detect_nonwear,
+            resample_hz=resample_hz
+        )
+    except FileNotFoundError as e:
+        # Clarify exactly what path was tried
+        print(f"Error loading sensor data; tried to open: {cwa_path}")
+        raise
+
     return data, info
 
 def get_participant_list(base_dir: str) -> Tuple[List[str], List[str]]:
