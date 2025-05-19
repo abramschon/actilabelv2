@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 label_study = "actilabelv2.label_study:main"
+elsa = "actilabelv2.elsa:main"
 
 [build-system]
 requires = ["hatchling"]
