@@ -30,6 +30,7 @@ If it is a previously labelled participant, it should reload the existing labels
 If it is a new participant, it should set up the intial labels based on the elsa_blip2_annotations.pkl file.
     
 """
+#%%
 import re
 import os
 import pandas as pd
@@ -43,6 +44,7 @@ import actipy
 from actilabelv2.main import AnnotationTool, ImageDataSource, AnnotationChannel, Annotation, VectorDataSource, ScalarDataSource
 
 
+#%%
 def main():
     """Main CLI entry point."""
     # Get base directory from environment or use default
@@ -277,6 +279,8 @@ def load_blip2_annotations(base_dir: str) -> pd.DataFrame:
     with open(pkl_path, 'rb') as f:
         return pickle.load(f)
     
+
+#%%
 def spread_label_time(
     labels: np.ndarray,
     times: np.ndarray,
@@ -309,7 +313,7 @@ def spread_label_time(
     # find where the labels are the same
     labels_same = labels[:-1] == labels[1:]
     # find where the boundaries overlap
-    overlap = end_times[:-1] > start_times[1:]
+    overlap = end_times[:-1] >= start_times[1:]
 
     # do not keep labels that are the same and overlap
     drop = labels_same & overlap
@@ -318,18 +322,35 @@ def spread_label_time(
 
     end_times = np.append(end_times[:-1][~drop], end_times[-1])
 
-    # calculate the average of the two boundaries
-    dts = (
-        (end_times[:-1] - start_times[1:]) + d_right - d_left
-    ) / 2  # note that this rounds down to the nearest second
+    # calculate the mid-point between labels
+    dts = (end_times[:-1] - start_times[1:]) / 2  # note that this rounds down to the nearest second
     avg_boundaries = start_times[1:] + dts
 
     start_times[1:] = np.maximum(start_times[1:], avg_boundaries)
     end_times[:-1] = np.minimum(end_times[:-1], avg_boundaries)
 
-    import pdb; pdb.set_trace()
-
     return (labels, start_times, end_times)
+
+
+time = np.datetime64("2020-01-01T00:00:00")
+times = []
+labels = []
+for i in range(5):
+    if i > 3:
+        labels.append("a")
+    else:
+        labels.append("b")
+    time += np.timedelta64(i, "s")
+    times.append(
+        time
+    )
+
+ls, st, et = spread_label_time(
+    np.array(labels), np.array(times), 0, 3
+)
+    
+
+#%%
 
 def get_participant_images(base_dir: str, participant_id: int) -> List[str]:
     """Get list of image paths for a participant.
