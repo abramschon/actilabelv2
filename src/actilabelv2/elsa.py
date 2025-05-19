@@ -206,6 +206,11 @@ def load_sensor_data(acc_path: str,
 
     # 4) Call actipy with the drive-letter path
     cwa_str = str(cwa_path)
+    print("About to open:", repr(cwa_str))
+    print("Exists:", os.path.exists(cwa_str), "Size:", os.path.getsize(cwa_str))
+    with open(cwa_str, "rb") as f:
+        print("First 16 bytes:", f.read(16))
+
     print(f"Loading sensor data from {cwa_str}")
     try:
         data, info = actipy.read_device(
