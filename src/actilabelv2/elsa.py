@@ -94,9 +94,24 @@ def main():
                 continue
         
         # Get image paths
-        image_paths = get_participant_images(base_dir, participant_id)
-        if not image_paths:
+        image_files = get_participant_images(base_dir, participant_id)
+        if not image_files:
             print(f"No images found for participant {participant_id}")
+            continue
+            
+        image_times = []
+        image_paths = []
+        for img_file in image_files:
+            timestamp = parse_timestamp_from_filename(
+                os.path.basename(img_file), 
+                "%Y%m%d_%H%M%S"
+            )
+            if timestamp:
+                image_times.append(timestamp)
+                image_paths.append(img_file)
+        
+        if not image_times:
+            print("No valid timestamps found in image filenames")
             continue
             
         # Get accelerometer data
@@ -104,10 +119,6 @@ def main():
         
         # Create annotation tool
         tool = AnnotationTool()
-        
-        # Set up image data source
-        image_times = [np.datetime64(datetime.strptime(os.path.basename(p), "%Y%m%d_%H%M%S.JPG")) 
-                      for p in image_paths]
         
         # Create data sources list with both preview and thumbnail image sources
         data_sources = [
@@ -396,6 +407,38 @@ def load_existing_labels(base_dir: str, participant_id: str) -> List[Annotation]
             ))
     
     return annotations
+
+
+def parse_timestamp_from_filename(filename, timestamp_format):
+    """Extract timestamp from filename using the provided format."""
+    try:
+        # Get the filename without extension
+        name = os.path.splitext(filename)[0]
+        
+        # Extract the timestamp portion using regex
+        # Convert the format pattern to a regex pattern
+        # Replace format codes with their regex equivalents
+        regex_pattern = timestamp_format.replace('%Y', r'\d{4}')  # 4 digits for year
+        regex_pattern = regex_pattern.replace('%m', r'\d{2}')     # 2 digits for month
+        regex_pattern = regex_pattern.replace('%d', r'\d{2}')     # 2 digits for day
+        regex_pattern = regex_pattern.replace('%H', r'\d{2}')     # 2 digits for hour
+        regex_pattern = regex_pattern.replace('%M', r'\d{2}')     # 2 digits for minute
+        regex_pattern = regex_pattern.replace('%S', r'\d{2}')     # 2 digits for second
+        
+        # Find the timestamp in the filename
+        match = re.search(regex_pattern, name)
+        if not match:
+            return None
+            
+        # Extract the matched timestamp
+        timestamp_str = match.group(0)
+        
+        # Parse the timestamp using the provided format
+        dt = datetime.strptime(timestamp_str, timestamp_format)
+        return np.datetime64(dt)
+    except Exception as e:
+        print(f"Error parsing timestamp from {filename}: {e}")
+        return None
 
 
 if __name__ == "__main__":
