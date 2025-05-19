@@ -170,50 +170,54 @@ def main():
         break # break out of the loop if you have annotated someone
 
 
+import gzip
+import shutil
+from pathlib import Path
+import actipy
+
 def load_sensor_data(acc_path: str,
                      lowpass_hz: float = 20,
                      calibrate_gravity: bool = True,
                      detect_nonwear: bool = True,
                      resample_hz: int = 50):
     """
-    Decompress .CWA.gz if needed (next to the .gz),
-    then load with actipy.read_device, always pointing at the .CWA.
-
-    Returns: (data, info)
+    Decompress .CWA.gz if needed (in-place, next to the .gz),
+    then load with actipy.read_device using the original drive-letter path,
+    so we don’t end up with a \\UNC\\… path.
     """
-    # 1) Normalize the path and make it absolute
-    p = Path(acc_path).expanduser().resolve()
+    # 1) Normalize separators but do NOT resolve to UNC
+    p = Path(acc_path.replace("\\", "/"))
     
-    # 2) If it's a .gz, plan to write foo.CWA next to it
+    # 2) Handle .gz → .CWA
     if p.suffix.lower() == ".gz":
         cwa_path = p.with_suffix("")  # drops the .gz
         if not cwa_path.exists():
             print(f"Decompressing {p.name} → {cwa_path.name} …")
-            with gzip.open(p, "rb") as f_in, open(cwa_path, "wb") as f_out:
+            with gzip.open(str(p), "rb") as f_in, open(str(cwa_path), "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
         else:
             print(f"Found existing decompressed file: {cwa_path.name}")
     else:
-        # Already a .CWA (or something else), use it directly
         cwa_path = p
 
-    # Double-check that file is there
+    # 3) Double-check the .CWA really is there
     if not cwa_path.exists():
         raise FileNotFoundError(f"Expected CWA file not found at {cwa_path}")
 
-    # 3) Load with ActiPy
-    print(f"Loading sensor data from {cwa_path}")
+    # 4) Call actipy with the drive-letter path
+    cwa_str = str(cwa_path)
+    print(f"Loading sensor data from {cwa_str}")
     try:
         data, info = actipy.read_device(
-            str(cwa_path),
+            cwa_str,
             lowpass_hz=lowpass_hz,
             calibrate_gravity=calibrate_gravity,
             detect_nonwear=detect_nonwear,
             resample_hz=resample_hz
         )
-    except FileNotFoundError as e:
-        # Clarify exactly what path was tried
-        print(f"Error loading sensor data; tried to open: {cwa_path}")
+    except FileNotFoundError:
+        # If it still fails, we'll see exactly what string was used
+        print(f"Error loading sensor data; tried to open: {cwa_str}")
         raise
 
     return data, info
