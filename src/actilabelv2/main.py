@@ -183,25 +183,21 @@ class AnnotationChannel:
     def add_annotation(self, annotation: Annotation) -> None:
         """Add an annotation to this channel."""
         # Check for overlaps and resolve if needed
-        print(f"Adding annotation: {annotation.label} ({annotation.start_time} - {annotation.end_time})")
         overlaps = [a for a in self.annotations 
                     if (a.start_time < annotation.end_time and 
                         annotation.start_time < a.end_time)]
         
         # Remove overlaps
         for overlap in overlaps:
-            print(f"Removing overlapping annotation: {overlap.label} ({overlap.start_time} - {overlap.end_time})")
             self.annotations.remove(overlap)
             
         self.annotations.append(annotation)
-        print(f"Added annotation. New count: {len(self.annotations)}")
         self.sort_annotations()
     
     def remove_annotation(self, annotation: Annotation) -> None:
         """Remove an annotation from this channel."""
         if annotation in self.annotations:
             self.annotations.remove(annotation)
-            print(f"Removed annotation. New count: {len(self.annotations)}")
     
     def sort_annotations(self) -> None:
         """Sort annotations by start time."""
