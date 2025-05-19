@@ -105,6 +105,30 @@ class TimeScale:
         self.max_time = self.initial_max_time
         self.update_scale()
 
+    def center_view_on_time(self, target_time: np.datetime64):
+        """Center the view on the given target_time, preserving duration."""
+        if not isinstance(target_time, np.datetime64):
+            print(f"Error: target_time must be np.datetime64, got {type(target_time)}")
+            return
+
+        current_duration_ms = (self.max_time - self.min_time).astype('timedelta64[ms]').astype(int)
+        
+        # Ensure duration is positive
+        if current_duration_ms <= 0:
+            # Default to a small duration if current is invalid, e.g., 1 minute
+            current_duration_ms = 60000 
+            
+        half_duration_ms = current_duration_ms // 2
+        
+        self.min_time = target_time - np.timedelta64(half_duration_ms, 'ms')
+        self.max_time = target_time + np.timedelta64(half_duration_ms, 'ms')
+        
+        # Ensure max_time is after min_time, especially if duration was very small
+        if self.max_time <= self.min_time:
+            self.max_time = self.min_time + np.timedelta64(1, 'ms') # Ensure at least 1ms duration
+
+        self.update_scale()
+
 @dataclass
 class Annotation:
     """Represents a single labeled time segment."""
@@ -2494,25 +2518,74 @@ class AnnotationTool:
             self.status_bar.set_channel_info(f"Selected: {channel_name}")
             self.logger.info(f"Selected channel: {channel_name}")
     
-    def _handle_tab(self):
-        """Handle tab key to cycle through annotation channels."""
-        # Find the next annotation channel
-        start_index = self.selected_channel_index
-        next_index = (start_index + 1) % len(self.channel_view.channels)
+    def _handle_tab(self, direction: str = 'forward'):
+        """Handle Tab and Shift+Tab to jump to next/previous annotation/image time."""
+        if not self.time_scale:
+            self.logger.warning("Time scale not available for Tab navigation.")
+            return
+
+        current_time = self.time_scale.to_scale(0.5) # Time at the center of the screen
         
-        # Look for the next annotation channel
-        while next_index != start_index:
-            if self.channel_view.channels[next_index].annotation_channel:
-                # Found an annotation channel
-                self.channel_view.channels[self.selected_channel_index].selected = False
-                self.selected_channel_index = next_index
-                self.channel_view.channels[self.selected_channel_index].selected = True
-                channel_name = self.channel_view.channels[next_index].name
-                self.status_bar.set_channel_info(f"Selected: {channel_name}")
-                self.logger.info(f"Selected channel: {channel_name}")
+        target_annotation_time = None
+        target_image_time = None
+        
+        # 1. Check Annotation Times
+        selected_ann_channel = None
+        for ch in self.channel_view.channels:
+            if ch.selected and ch.annotation_channel:
+                selected_ann_channel = ch.annotation_channel
                 break
-            next_index = (next_index + 1) % len(self.channel_view.channels)
-    
+        
+        if selected_ann_channel:
+            annotation_times = set()
+            for ann in selected_ann_channel.annotations:
+                annotation_times.add(ann.start_time)
+                annotation_times.add(ann.end_time)
+            
+            sorted_annotation_times = sorted(list(annotation_times))
+            
+            if direction == 'forward':
+                future_ann_times = [t for t in sorted_annotation_times if t > current_time]
+                if future_ann_times:
+                    target_annotation_time = min(future_ann_times)
+            else: # backward
+                past_ann_times = [t for t in sorted_annotation_times if t < current_time]
+                if past_ann_times:
+                    target_annotation_time = max(past_ann_times)
+
+        # 2. Check Image Times
+        all_image_times = set()
+        for ch in self.channel_view.channels:
+            if isinstance(ch.data_source, ImageDataSource) and ch.data_source.times is not None:
+                for t in ch.data_source.times:
+                    all_image_times.add(t)
+        
+        sorted_image_times = sorted(list(all_image_times))
+        
+        if direction == 'forward':
+            future_image_times = [t for t in sorted_image_times if t > current_time]
+            if future_image_times:
+                target_image_time = min(future_image_times)
+        else: # backward
+            past_image_times = [t for t in sorted_image_times if t < current_time]
+            if past_image_times:
+                target_image_time = max(past_image_times)
+
+        # 3. Determine Final Target Time and Jump
+        final_target_time = None
+        # Prioritize annotation time from the selected channel
+        if target_annotation_time is not None:
+            final_target_time = target_annotation_time
+        elif target_image_time is not None: # Fallback to image time if no suitable annotation time
+            final_target_time = target_image_time
+                
+        if final_target_time is not None:
+            self.time_scale.center_view_on_time(final_target_time)
+            self.time_scrubber.set_current_time(final_target_time)
+            self.logger.info(f"Jumped to {self.time_scale.time_to_str(final_target_time)} ({direction})")
+        else:
+            self.logger.info(f"No further {'annotations or images' if selected_ann_channel else 'images'} found in {direction} direction.")
+
     def _handle_help(self):
         """Handle help button click."""
         self.show_help = not self.show_help
@@ -2720,6 +2793,17 @@ class AnnotationTool:
                         if self.label_editor.handle_event(event):
                             continue
                     else:
+                        if event.key == pygame.K_TAB:
+                            # Check for Left Shift or Right Shift modifier
+                            is_shift_pressed = (event.mod & pygame.KMOD_LSHIFT) or \
+                                               (event.mod & pygame.KMOD_RSHIFT) or \
+                                               (event.mod & pygame.KMOD_SHIFT)
+                            if is_shift_pressed:
+                                self._handle_tab('backward')
+                            else:
+                                self._handle_tab('forward')
+                            continue # Handled Tab/Shift+Tab
+
                         # Check for shift+equals (plus) key combination for zoom in
                         if event.key == pygame.K_EQUALS and event.mod & pygame.KMOD_SHIFT:
                             self._handle_zoom_in()
@@ -2974,8 +3058,9 @@ class AnnotationTool:
             ("Navigation", [
                 "Left/Right: Pan timeline (when not editing)",
                 "Up/Down: Select channel (when not editing)",
-                "Tab: Cycle through annotation channels (when not editing)",
-                "=/- or +/-: Zoom in/out",
+                "Tab: Jump to next annotation/image time",
+                "Shift+Tab: Jump to previous annotation/image time",
+                "=/+ or -: Zoom in/out",
                 "Escape: Cancel current action or quit",
                 "F1: Toggle help"
             ]),
