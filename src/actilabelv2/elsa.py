@@ -42,6 +42,161 @@ import pickle
 import actipy
 from actilabelv2.main import AnnotationTool, ImageDataSource, AnnotationChannel, Annotation, VectorDataSource, ScalarDataSource
 
+
+def main():
+    """Main CLI entry point."""
+    # Get base directory from environment or use default
+    base_dir = os.getenv("ELSA_BASE_DIR", ".")
+    
+    # Get lists of labeled and unlabeled participants
+    labeled_participants, unlabeled_participants = get_participant_list(base_dir)
+    
+    # Print participant lists in columns
+    def print_participant_columns(participants, title):
+        print(f"\n{title}:")
+        if not participants:
+            print("  None")
+            return
+            
+        # Sort participants
+        participants = sorted(participants)
+        
+        # Calculate number of columns (4 columns with 20 char width each)
+        col_width = 20
+        num_cols = 4
+        
+        # Print in columns
+        for i in range(0, len(participants), num_cols):
+            row = participants[i:i + num_cols]
+            print("  " + "".join(f"{p:<{col_width}}" for p in row))
+    
+    print_participant_columns(labeled_participants, "Labeled participants")
+    print_participant_columns(unlabeled_participants, "Unlabeled participants")
+    
+    # Get participant selection
+    while True:
+        participant_id = input("\nEnter participant ID to label (or 'q' to quit): ").strip()
+        if participant_id.lower() == 'q':
+            break
+            
+        # Check if the entered ID exists in either list
+        if participant_id not in labeled_participants and participant_id not in unlabeled_participants:
+            # Try with '10' prefix if not present
+            if not participant_id.startswith('10'):
+                prefixed_id = '10' + participant_id
+                if prefixed_id in labeled_participants or prefixed_id in unlabeled_participants:
+                    participant_id = prefixed_id
+                else:
+                    print(f"Invalid participant ID: {participant_id}")
+                    continue
+            else:
+                print(f"Invalid participant ID: {participant_id}")
+                continue
+        
+        # Get image paths
+        image_paths = get_participant_images(base_dir, participant_id)
+        if not image_paths:
+            print(f"No images found for participant {participant_id}")
+            continue
+            
+        # Get accelerometer data
+        acc_path = get_participant_acc_data(base_dir, participant_id)
+        
+        # Create annotation tool
+        tool = AnnotationTool()
+        
+        # Set up image data source
+        image_times = [np.datetime64(datetime.strptime(os.path.basename(p), "%Y%m%d_%H%M%S.JPG")) 
+                      for p in image_paths]
+        
+        # Create data sources list with both preview and thumbnail image sources
+        data_sources = [
+            ImageDataSource(
+                "Preview",
+                np.array(image_times),
+                image_paths,
+                thumbnail_size=(300, 300),
+                max_images_in_view=1,
+            ),
+            ImageDataSource(
+                "Thumbnails",
+                np.array(image_times),
+                image_paths,
+                thumbnail_size=(100, 100),
+                max_images_in_view=10,
+                display_mode='centered',
+            )
+        ]
+        
+        # Load and process CWA data if available
+        if acc_path:
+            try:
+                print(f"Loading sensor data from {acc_path}")
+                data, info = actipy.read_device(acc_path,
+                                              lowpass_hz=20,
+                                              calibrate_gravity=True,
+                                              detect_nonwear=True,
+                                              resample_hz=50)
+                
+                # Convert index to numpy datetime64
+                sensor_times = data.index.values.astype(np.datetime64)
+                
+                # Add sensor data sources
+                data_sources.extend([
+                    VectorDataSource(
+                        "Accelerometer",
+                        sensor_times,
+                        data[['x', 'y', 'z']].values,
+                        dim_names=['x', 'y', 'z']
+                    ),
+                    ScalarDataSource(
+                        "Temperature",
+                        sensor_times,
+                        data['temperature'].values,
+                        color=(255, 100, 100)  # Red
+                    ),
+                    ScalarDataSource(
+                        "Light",
+                        sensor_times,
+                        data['light'].values,
+                        color=(255, 255, 100)  # Yellow
+                    )
+                ])
+                print("Successfully loaded sensor data")
+            except Exception as e:
+                print(f"Error loading sensor data: {e}")
+        else:
+            print(f"No accelerometer data found for participant {participant_id}")
+        
+        # Set up annotation channel
+        annotation_channel = AnnotationChannel(
+            name="Indoor/Outdoor",
+            possible_labels=["indoor", "outdoor"]
+        )
+        
+        # Load or create labels
+        if participant_id in labeled_participants:
+            print(f"Loading existing labels for participant {participant_id}")
+            annotations = load_existing_labels(base_dir, participant_id)
+            for ann in annotations:
+                annotation_channel.add_annotation(ann)
+        else:
+            print(f"Creating initial labels for participant {participant_id}")
+            annotations = create_initial_labels(base_dir, participant_id)
+            for ann in annotations:
+                annotation_channel.add_annotation(ann)
+        
+        # Load data into tool
+        tool.load_data(
+            data_sources=data_sources,
+            annotation_channels=[annotation_channel],
+            load_existing=True
+        )
+        
+        # Run the tool
+        tool.run()
+
+
 def get_participant_list(base_dir: str) -> Tuple[List[str], List[str]]:
     """Get lists of labeled and unlabeled participants.
     
@@ -242,158 +397,6 @@ def load_existing_labels(base_dir: str, participant_id: str) -> List[Annotation]
     
     return annotations
 
-def main():
-    """Main CLI entry point."""
-    # Get base directory from environment or use default
-    base_dir = os.getenv("ELSA_BASE_DIR", ".")
-    
-    # Get lists of labeled and unlabeled participants
-    labeled_participants, unlabeled_participants = get_participant_list(base_dir)
-    
-    # Print participant lists in columns
-    def print_participant_columns(participants, title):
-        print(f"\n{title}:")
-        if not participants:
-            print("  None")
-            return
-            
-        # Sort participants
-        participants = sorted(participants)
-        
-        # Calculate number of columns (4 columns with 20 char width each)
-        col_width = 20
-        num_cols = 4
-        
-        # Print in columns
-        for i in range(0, len(participants), num_cols):
-            row = participants[i:i + num_cols]
-            print("  " + "".join(f"{p:<{col_width}}" for p in row))
-    
-    print_participant_columns(labeled_participants, "Labeled participants")
-    print_participant_columns(unlabeled_participants, "Unlabeled participants")
-    
-    # Get participant selection
-    while True:
-        participant_id = input("\nEnter participant ID to label (or 'q' to quit): ").strip()
-        if participant_id.lower() == 'q':
-            break
-            
-        # Check if the entered ID exists in either list
-        if participant_id not in labeled_participants and participant_id not in unlabeled_participants:
-            # Try with '10' prefix if not present
-            if not participant_id.startswith('10'):
-                prefixed_id = '10' + participant_id
-                if prefixed_id in labeled_participants or prefixed_id in unlabeled_participants:
-                    participant_id = prefixed_id
-                else:
-                    print(f"Invalid participant ID: {participant_id}")
-                    continue
-            else:
-                print(f"Invalid participant ID: {participant_id}")
-                continue
-        
-        # Get image paths
-        image_paths = get_participant_images(base_dir, participant_id)
-        if not image_paths:
-            print(f"No images found for participant {participant_id}")
-            continue
-            
-        # Get accelerometer data
-        acc_path = get_participant_acc_data(base_dir, participant_id)
-        
-        # Create annotation tool
-        tool = AnnotationTool()
-        
-        # Set up image data source
-        image_times = [np.datetime64(datetime.strptime(os.path.basename(p), "%Y%m%d_%H%M%S.JPG")) 
-                      for p in image_paths]
-        
-        # Create data sources list with both preview and thumbnail image sources
-        data_sources = [
-            ImageDataSource(
-                "Preview",
-                np.array(image_times),
-                image_paths,
-                thumbnail_size=(300, 300),
-                max_images_in_view=1,
-            ),
-            ImageDataSource(
-                "Thumbnails",
-                np.array(image_times),
-                image_paths,
-                thumbnail_size=(100, 100),
-                max_images_in_view=10,
-                display_mode='centered',
-            )
-        ]
-        
-        # Load and process CWA data if available
-        if acc_path:
-            try:
-                print(f"Loading sensor data from {acc_path}")
-                data, info = actipy.read_device(acc_path,
-                                              lowpass_hz=20,
-                                              calibrate_gravity=True,
-                                              detect_nonwear=True,
-                                              resample_hz=50)
-                
-                # Convert index to numpy datetime64
-                sensor_times = data.index.values.astype(np.datetime64)
-                
-                # Add sensor data sources
-                data_sources.extend([
-                    VectorDataSource(
-                        "Accelerometer",
-                        sensor_times,
-                        data[['x', 'y', 'z']].values,
-                        dim_names=['x', 'y', 'z']
-                    ),
-                    ScalarDataSource(
-                        "Temperature",
-                        sensor_times,
-                        data['temperature'].values,
-                        color=(255, 100, 100)  # Red
-                    ),
-                    ScalarDataSource(
-                        "Light",
-                        sensor_times,
-                        data['light'].values,
-                        color=(255, 255, 100)  # Yellow
-                    )
-                ])
-                print("Successfully loaded sensor data")
-            except Exception as e:
-                print(f"Error loading sensor data: {e}")
-        else:
-            print(f"No accelerometer data found for participant {participant_id}")
-        
-        # Set up annotation channel
-        annotation_channel = AnnotationChannel(
-            name="Indoor/Outdoor",
-            possible_labels=["indoor", "outdoor"]
-        )
-        
-        # Load or create labels
-        if participant_id in labeled_participants:
-            print(f"Loading existing labels for participant {participant_id}")
-            annotations = load_existing_labels(base_dir, participant_id)
-            for ann in annotations:
-                annotation_channel.add_annotation(ann)
-        else:
-            print(f"Creating initial labels for participant {participant_id}")
-            annotations = create_initial_labels(base_dir, participant_id)
-            for ann in annotations:
-                annotation_channel.add_annotation(ann)
-        
-        # Load data into tool
-        tool.load_data(
-            data_sources=data_sources,
-            annotation_channels=[annotation_channel],
-            load_existing=True
-        )
-        
-        # Run the tool
-        tool.run()
 
 if __name__ == "__main__":
     main()
