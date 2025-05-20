@@ -21,10 +21,19 @@ git clone https://github.com/abramschon/actilabelv2.git
 cd actilabelv2
 ```
 
+## Conda
+To install the package with conda, navigate to the project root and run:
+```bash
+conda env create -f environment.yml
+conda activate actilabelv2
+```
+
+## UV
 With [uv](https://docs.astral.sh/uv/), (the new python package manager) all the dependencies are defined in the pyproject.toml file and will be automatically installed if you have uv installed, so you can go straight to running the programme! 
 
-If you are using processing .cwa data, we rely on [actipy](https://actipy.readthedocs.io/en/latest/), which also requires a java installation.
+If you are using processing .cwa data, we rely on [actipy](https://actipy.readthedocs.io/en/latest/), which also requires a separate java installation, which cannot be managed by uv, though is covered in the conda installation.
 
+## Manual set-up
 If you want to manually set up a virtual environment, the required dependencies are:
 
 - actipy >= 3.5.0 # for reading in .cwa data
@@ -35,16 +44,34 @@ If you want to manually set up a virtual environment, the required dependencies 
 - pygame >= 2.6.1 # what we use for the annotation tool
 - pyyaml >= 6.0.2 # for parsing the project configs
 
+And then Java if reading in .cwa files using actipy.
+
 These can also be found in the pyproject.toml file.
 
 ## Usage
+
+### Labelling ELSA
+Once you have set up the environment as above, you need to point to the ELSA data. To do this, set the `ELSA_BASE_DIR` environment variable:
+
+Command Prompt:
+```bat
+set ELSA_BASE_DIR=<path to ELSA data>
+```
+Terminal:
+```bash
+export ELSA_BASE_DIR=<path to ELSA data>
+```
+Once this has been set, you can then run the programme using:
+```bash
+elsa
+```
 
 ### Labelling studies with timelapse + .cwa data
 
 We provide a command line interface to help label studies with wearable camera and sensor data:
 
 ```bash
-uv run label_study --config project_config.yaml --images /path/to/images --cwa /path/to/data.cwa --output /path/to/output
+label_study --config project_config.yaml --images /path/to/images --cwa /path/to/data.cwa --output /path/to/output
 ```
 
 Required arguments:
@@ -103,7 +130,7 @@ scalar_colors:
 To try out the tool with example data:
 
 ```bash
-uv run example.py
+python example.py
 ```
 
 This will create a sample dataset with:
@@ -144,27 +171,17 @@ tool.run()
 
 ### Navigation
 - Left/Right Arrow: Move timeline
+- Tab/Shift+Tab: Jump to next/prev annotation or image time-stamp
 - =/- or +/-: Zoom in/out
 - Space: Start creating a new annotation
 - Enter: Finish creating annotation (when editing)
 - F1: Toggle help display
-- Tab: Switch between annotation channels (when not editing)
 - Up/Down: Select channels (when not editing) or navigate through label suggestions (when editing)
 
 ### Annotation
 1. Press Space to start a new annotation
 2. Type the label (autocomplete suggestions will appear)
-3. Use Up/Down arrows to navigate suggestions
-4. Press Tab to accept suggestion or continue typing
-5. Press Enter to create the annotation
-
-## Data Sources
-
-The tool supports three types of data sources:
-
-1. `ScalarDataSource`: For single-value time series (e.g., temperature, light)
-2. `VectorDataSource`: For multi-dimensional time series (e.g., accelerometer)
-3. `ImageDataSource`: For synchronized images or video frames
+3. Press Enter to create the annotation
 
 ## Contributing
 
