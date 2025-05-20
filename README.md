@@ -24,7 +24,7 @@ cd actilabelv2
 ## Conda
 To install the package with conda, navigate to the project root and run:
 ```bash
-conda env create -f environment.yml
+conda env create -f env.yml
 conda activate actilabelv2
 ```
 
