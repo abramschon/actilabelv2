@@ -52,11 +52,17 @@ These can also be found in the pyproject.toml file.
 
 ### Labelling ELSA
 Once you have set up the environment as above, you need to point to the ELSA data. To do this, set the `ELSA_BASE_DIR` environment variable:
+
+Command Prompt:
 ```bat
 set ELSA_BASE_DIR=<path to ELSA data>
 ```
+Terminal:
+```bash
+export ELSA_BASE_DIR=<path to ELSA data>
+```
 Once this has been set, you can then run the programme using:
-```bat
+```bash
 elsa
 ```
 
