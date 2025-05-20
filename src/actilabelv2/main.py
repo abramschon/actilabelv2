@@ -547,7 +547,13 @@ class VectorDataSource(DataSource):
 
 class ImageDataSource(DataSource):
     """A data source for images over time."""
-    
+    # Layout constants
+    IMG_MARGIN: int = 5
+    TOP_MARGIN: int = 10
+    TIMELINE_HEIGHT: int = 40
+    CONNECTION_HEIGHT: int = 5
+    BUTTON_WIDTH: int = 50
+    MIN_HEIGHT: int = 50
     def __init__(self, 
                  name: str, 
                  times: np.ndarray, 
@@ -583,11 +589,13 @@ class ImageDataSource(DataSource):
         self.preload_count = min(20, len(image_paths))
         self.load_thread = threading.Thread(target=self._preload_thumbnails, daemon=True)
         self.load_thread.start()
+        # Track last computed thumbnail height for dynamic resizing
+        self.last_img_height = None
 
     def _calculate_image_dimensions(self, rect_width: int, img_margin: int) -> Tuple[int, int]:
         """Calculate image dimensions based on available space and max_images_in_view."""
         # Add extra space on the right for the mode toggle button
-        button_width = 50  # Space for mode toggle button
+        button_width = self.BUTTON_WIDTH  # Space for mode toggle button
         available_width = rect_width - button_width
         
         # Calculate maximum width based on available space and number of images
@@ -605,21 +613,12 @@ class ImageDataSource(DataSource):
         return width, height
 
     def get_height(self) -> int:
-        """Get the height needed for this channel based on image dimensions."""
-        # Calculate image dimensions based on a default width (will be adjusted in render)
-        width, height = self._calculate_image_dimensions(800, 5)  # Use reasonable default width
-        
-        # Add space for buttons at top, timeline, and connection lines
-        top_margin = 40  # Space for buttons at top
-        timeline_height = 40  # Height for timeline
-        connection_height = 40  # Extra space for connection lines
-        
-        # Calculate total height needed
-        total_height = height + top_margin + timeline_height + connection_height
-        
-        # Ensure minimum height to prevent connection lines from disappearing
-        min_height = 200  # Minimum height to ensure connection lines are visible
-        return max(total_height, min_height)
+        """Channel height = thumbnail height + top/timeline/connection margins."""
+        thumb_h = self.target_thumbnail_size[1]
+        top     = self.TOP_MARGIN
+        tl      = self.TIMELINE_HEIGHT
+        conn    = self.CONNECTION_HEIGHT
+        return max(self.MIN_HEIGHT, thumb_h + top + tl + conn)
 
     def _preload_thumbnails(self):
         """Preload thumbnails in background thread."""
@@ -742,6 +741,8 @@ class ImageDataSource(DataSource):
 
     def render(self, surface: pygame.Surface, time_scale: Optional[TimeScale], rect: pygame.Rect) -> None:
         """Render the image data source."""
+        # Remember current width for height calculation
+        self.last_rect_width = rect.width
         if time_scale is None:
             super().render(surface, time_scale, rect)
             return
@@ -792,14 +793,23 @@ class ImageDataSource(DataSource):
                 display_indices = buffered_indices
         
         # Calculate layout
-        img_margin = 5
-        top_margin = 40  # Space for buttons at top
-        timeline_height = 40  # Height for timeline
-        connection_height = 40  # Extra space for connection lines
+        img_margin = self.IMG_MARGIN
+        top_margin = self.TOP_MARGIN
+        timeline_height = self.TIMELINE_HEIGHT
+        connection_height = self.CONNECTION_HEIGHT
         img_area_height = rect.height - top_margin - timeline_height - connection_height
+
+        # Always fit inside the user-provided thumbnail box
+        tw, th = self.target_thumbnail_size
+        if self.aspect_ratio >= 1:  # landscape or square
+            img_w = tw
+            img_h = min(th, int(tw / self.aspect_ratio))
+        else:                        # portrait
+            img_h = th
+            img_w = min(tw, int(th * self.aspect_ratio))
         
-        # Calculate image dimensions based on available space
-        img_width, img_height = self._calculate_image_dimensions(rect.width, img_margin)
+        # And use those everywhere as img_width/img_height:
+        img_width, img_height = img_w, img_h
         
         # Calculate x positions for images based on display mode
         if self.display_mode == "grid":
