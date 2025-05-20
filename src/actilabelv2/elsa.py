@@ -9,12 +9,29 @@ import glob
 import pickle
 import actipy
 from actilabelv2.main import AnnotationTool, ImageDataSource, AnnotationChannel, Annotation, VectorDataSource, ScalarDataSource
+import argparse
+
+
+# argparse support
+def parse_args():
+    parser = argparse.ArgumentParser(description="ELSA Annotation Tool CLI")
+    parser.add_argument(
+        '--cwa',
+        action='store_true',
+        help='Include accelerometer (CWA) data sources'
+    )
+    parser.add_argument(
+        '--base-dir',
+        default=os.getenv("ELSA_BASE_DIR", "."),
+        help='Base directory for datasets (default: $ELSA_BASE_DIR or current directory)'
+    )
+    return parser.parse_args()
 
 
 def main():
     """Main CLI entry point."""
-    # Get base directory from environment or use default
-    base_dir = os.getenv("ELSA_BASE_DIR", ".")
+    args = parse_args()
+    base_dir = args.base_dir
     
     # Get lists of labeled and unlabeled participants
     labeled_participants, unlabeled_participants = get_participant_list(base_dir)
@@ -98,49 +115,48 @@ def main():
                 display_mode='centered',
             )
         ]
-            
-        # Get accelerometer data
-        acc_path = get_participant_acc_data(base_dir, participant_id)
-        
-        # Load and process CWA data if available
-        if acc_path:
-            try:
-                print(f"Loading sensor data from {acc_path}")
-                data, info = actipy.read_device(acc_path,
-                                              lowpass_hz=20,
-                                              calibrate_gravity=True,
-                                              detect_nonwear=True,
-                                              resample_hz=30)
-                
-                # Convert index to numpy datetime64
-                sensor_times = data.index.values.astype(np.datetime64)
-                
-                # Add sensor data sources
-                data_sources.extend([
-                    VectorDataSource(
-                        "Accelerometer",
-                        sensor_times,
-                        data[['x', 'y', 'z']].values,
-                        dim_names=['x', 'y', 'z']
-                    ),
-                    ScalarDataSource(
-                        "Temperature",
-                        sensor_times,
-                        data['temperature'].values,
-                        color=(255, 100, 100)  # Red
-                    ),
-                    ScalarDataSource(
-                        "Light",
-                        sensor_times,
-                        data['light'].values,
-                        color=(255, 255, 100)  # Yellow
-                    )
-                ])
-                print("Successfully loaded sensor data")
-            except Exception as e:
-                print(f"Error loading sensor data: {acc_path}")
-        else:
-            print(f"No accelerometer data found for participant {participant_id}")
+
+        if args.cwa:
+            acc_path = get_participant_acc_data(base_dir, participant_id)
+            # Load and process CWA data if available
+            if acc_path:
+                try:
+                    print(f"Loading sensor data from {acc_path}")
+                    data, info = actipy.read_device(acc_path,
+                                                  lowpass_hz=False,
+                                                  calibrate_gravity=True,
+                                                  detect_nonwear=False,
+                                                  resample_hz=30)
+                    
+                    # Convert index to numpy datetime64
+                    sensor_times = data.index.values.astype(np.datetime64)
+                    
+                    # Add sensor data sources
+                    data_sources.extend([
+                        VectorDataSource(
+                            "Accelerometer",
+                            sensor_times,
+                            data[['x', 'y', 'z']].values,
+                            dim_names=['x', 'y', 'z']
+                        ),
+                        ScalarDataSource(
+                            "Temperature",
+                            sensor_times,
+                            data['temperature'].values,
+                            color=(255, 100, 100)  # Red
+                        ),
+                        ScalarDataSource(
+                            "Light",
+                            sensor_times,
+                            data['light'].values,
+                            color=(255, 255, 100)  # Yellow
+                        )
+                    ])
+                    print("Successfully loaded sensor data")
+                except Exception as e:
+                    print(f"Error loading sensor data: {acc_path}")
+            else:
+                print(f"No accelerometer data found for participant {participant_id}")
         
         # Set up annotation channel
         annotation_channel = AnnotationChannel(
