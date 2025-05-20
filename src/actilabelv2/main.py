@@ -392,6 +392,14 @@ class ScalarDataSource(DataSource):
         )
         visible_times = self.times[visible_mask]
         visible_values = self.values[visible_mask]
+
+        # Downsample when zoomed out so we don’t draw every point
+        num = len(visible_times)
+        max_points = int(rect.width)  # one sample per horizontal pixel
+        if num > max_points:
+            idxs = np.linspace(0, num - 1, max_points).astype(int)
+            visible_times = visible_times[idxs]
+            visible_values = visible_values[idxs]
         
         if len(visible_times) < 2:
             font = pygame.font.SysFont("Helvetica Neue", 20)
@@ -478,6 +486,13 @@ class VectorDataSource(DataSource):
         )
         visible_times = self.times[visible_mask]
         visible_values = self.values[visible_mask]
+
+        num = len(visible_times)
+        max_points = int(rect.width)  # one sample per pixel
+        if num > max_points:
+            picks = np.linspace(0, num - 1, max_points).astype(int)
+            visible_times = visible_times[picks]
+            visible_values = visible_values[picks]
         
         if len(visible_times) < 2:
             font = pygame.font.SysFont("Helvetica Neue", 20)

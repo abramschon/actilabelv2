@@ -25,12 +25,12 @@ def create_example_dataset():
     
     # Set up the start time and duration
     start_time = np.datetime64('2024-01-01T09:00:00')  # Start at 9 AM
-    duration_seconds = 100 * 20  # 100 images * 20 seconds = 2000 seconds (about 33 minutes)
+    duration_seconds = 5000 * 20  # 100 images * 20 seconds = 2000 seconds (about 33 minutes)
     
     # Create time arrays for different sensors
     image_times = np.array([
         start_time + np.timedelta64(i * 20, 's')  # Image every 20 seconds
-        for i in range(100)
+        for i in range(5000)
     ])
     
     accel_times = np.array([
