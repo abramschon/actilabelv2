@@ -124,7 +124,7 @@ def main():
                     print(f"Loading sensor data from {acc_path}")
                     data, info = actipy.read_device(acc_path,
                                                   lowpass_hz=False,
-                                                  calibrate_gravity=True,
+                                                  calibrate_gravity=False,
                                                   detect_nonwear=False,
                                                   resample_hz=30)
                     
@@ -159,10 +159,17 @@ def main():
                 print(f"No accelerometer data found for participant {participant_id}")
         
         # Set up annotation channel
-        annotation_channel = AnnotationChannel(
-            name="Outdoor",
-            possible_labels=["indoor", "outdoor", "uncodeable"]
-        )
+        annotation_channels = [
+            AnnotationChannel(
+                name="Outdoor",
+                possible_labels=["indoor", "outdoor", "uncodeable"]
+            ),
+            AnnotationChannel(
+                name="Intensity",
+                possible_labels=["sedentary", "light", "mvpa", "uncodeable"]
+            )
+        ]
+
         
         # Create initial labels if participant is not labelled
         if participant_id not in labeled_participants:
@@ -178,12 +185,15 @@ def main():
 
         tool.load_data(
             data_sources=data_sources,
-            annotation_channels=[annotation_channel],
+            annotation_channels=annotation_channels,
             load_existing=True
         )
         
         # Run the tool
         tool.run()
+
+        # Save 
+        tool._handle_save()
 
         break # break out of the loop if you have annotated someone
 
