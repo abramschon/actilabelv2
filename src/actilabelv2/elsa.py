@@ -246,7 +246,19 @@ def load_blip2_annotations(base_dir: str) -> pd.DataFrame:
     pkl_path = os.path.join(base_dir, "labels", "elsa_blip2_annotations.pkl")
     with open(pkl_path, 'rb') as f:
         return pickle.load(f)
+
+def load_outformer_annotations(base_dir: str) -> pd.DataFrame:
+    """Load the outformer annotations from pickle file.
     
+    Args:
+        base_dir: Base directory containing the dataset
+        
+    Returns:
+        DataFrame containing outfomer annotations
+    """
+    pkl_path = os.path.join(base_dir, "labels", "elsa_outformer_annotations.pkl")
+    with open(pkl_path, 'rb') as f:
+        return pickle.load(f)
 
 def spread_label_time(
     labels: np.ndarray,
@@ -351,18 +363,16 @@ def get_participant_acc_data(base_dir: str, participant_id: int) -> Optional[str
     return None
 
 def create_initial_labels(base_dir: str, participant_id: int) -> bool:
-    """Create initial labels for a participant using blip2 annotations.
+    """Create initial labels for a participant using blip2 and outformer annotations.
     
     Args:
         base_dir: Base directory containing the dataset
         participant_id: Participant ID
 
-    Saves the initial labels to Outdoor.csv.
-        
+    Saves the initial labels to Outdoor.csv, and Outformer.csv.
     """
     # Load blip2 annotations
     blip2_df = load_blip2_annotations(base_dir)
-
     blip2_df['blip2_label'] = blip2_df['blip2_label'].replace({'indoors': 'indoor', 'outdoors': 'outdoor'})
     
     # Filter for this participant
@@ -393,6 +403,22 @@ def create_initial_labels(base_dir: str, participant_id: int) -> bool:
     label_dir = get_label_dir(base_dir=base_dir, participant_id=participant_id)
     os.mkdir(label_dir)
     label_dir = os.path.join(label_dir, "Outdoor.csv")
+    init_df.to_csv(label_dir, index=False)  
+
+    # Load outformer annotations
+    outfomer_df = load_outformer_annotations(base_dir)
+
+    # Save to Outformer.csv 
+    init_df = pd.DataFrame(
+        {
+            "label": outfomer_df.outdoor_label,
+            "start_time": outfomer_df.start_time,
+            "end_time": outfomer_df.end_times
+        }
+    )
+    label_dir = get_label_dir(base_dir=base_dir, participant_id=participant_id)
+    os.mkdir(label_dir)
+    label_dir = os.path.join(label_dir, "Outformer.csv")
     init_df.to_csv(label_dir, index=False)  
     
     return True
