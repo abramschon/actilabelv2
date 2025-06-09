@@ -408,16 +408,25 @@ def create_initial_labels(base_dir: str, participant_id: int) -> bool:
     # Load outformer annotations
     outfomer_df = load_outformer_annotations(base_dir)
 
+    # Filter for this participant
+    participant_df = outfomer_df[outfomer_df['id'] == participant_id+1000].copy() # ELSA participants are numbered in the 1000s in this
+    
+    if len(participant_df) == 0:
+        print(f"No outformer annotations found for participant {participant_id} (base ID: {participant_id})")
+        return []
+    
+    # Sort by time
+    participant_df.sort_values('time', inplace=True)
+
     # Save to Outformer.csv 
     init_df = pd.DataFrame(
         {
-            "label": outfomer_df.outdoor_label,
-            "start_time": outfomer_df.start_time,
-            "end_time": outfomer_df.end_times
+            "label": participant_df.outdoor_label,
+            "start_time": participant_df.start_time,
+            "end_time": participant_df.end_times
         }
     )
     label_dir = get_label_dir(base_dir=base_dir, participant_id=participant_id)
-    os.mkdir(label_dir)
     label_dir = os.path.join(label_dir, "Outformer.csv")
     init_df.to_csv(label_dir, index=False)  
     
