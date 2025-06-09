@@ -226,6 +226,7 @@ def parse_timestamp_from_filename(filename, timestamp_format):
         regex_pattern = regex_pattern.replace('%H', r'\d{2}')     # 2 digits for hour
         regex_pattern = regex_pattern.replace('%M', r'\d{2}')     # 2 digits for minute
         regex_pattern = regex_pattern.replace('%S', r'\d{2}')     # 2 digits for second
+        regex_pattern = regex_pattern.replace('%f', r'\d{1,6}')   # 1-6 digits for microseconds
         
         # Find the timestamp in the filename
         match = re.search(regex_pattern, name)
