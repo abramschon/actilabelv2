@@ -165,6 +165,11 @@ def main():
                 possible_labels=["indoor", "outdoor", "uncodeable"]
             ),
             AnnotationChannel(
+                name="Outformer",
+                possible_labels=["indoor", "outdoor", "uncodeable"]
+            ),
+            
+            AnnotationChannel(
                 name="Intensity",
                 possible_labels=["sedentary", "light", "mvpa", "uncodeable"]
             )
@@ -432,22 +437,24 @@ def create_initial_labels(base_dir: str, participant_id: int) -> bool:
     init_df.to_csv(label_dir, index=False)  
 
     # Load outformer annotations
-    outfomer_df = load_outformer_annotations(base_dir)
+    outformer_df = load_outformer_annotations(base_dir)
+
+    outformer_df['label'] = outformer_df['outdoor_label'].apply(lambda int_label: 'outdoor' if int_label==1 else 'indoor')
 
     # Filter for this participant
-    participant_df = outfomer_df[outfomer_df['id'] == participant_id+1000].copy() # ELSA participants are numbered in the 1000s in this
+    participant_df = outformer_df[outformer_df['id'] == participant_id+1000].copy() # ELSA participants are numbered in the 1000s in this
     
     if len(participant_df) == 0:
         print(f"No outformer annotations found for participant {participant_id} (base ID: {participant_id})")
         return []
     
     # Sort by time
-    participant_df.sort_values('time', inplace=True)
+    participant_df.sort_values('start_time', inplace=True)
 
     # Save to Outformer.csv 
     init_df = pd.DataFrame(
         {
-            "label": participant_df.outdoor_label,
+            "label": participant_df.label,
             "start_time": participant_df.start_time,
             "end_time": participant_df.end_times
         }
