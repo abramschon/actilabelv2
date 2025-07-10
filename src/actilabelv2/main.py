@@ -730,11 +730,15 @@ class ImageDataSource(DataSource):
 
         # For each target time, find the index in times_subset that's closest
         selected = []
+        last_index = -1
         for target in targets:
             # absolute difference
             diffs = np.abs(times_subset - target)
             best_local = np.argmin(diffs)
-            selected.append(indices[best_local])
+            index = indices[best_local]
+            if index != last_index:
+                selected.append(indices[best_local])
+            last_index = index
 
         return np.array(selected, dtype=int)
 
