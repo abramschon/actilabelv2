@@ -140,6 +140,7 @@ def main():
                 image_paths,
                 thumbnail_size=tuple(display_settings['preview']['size']),
                 max_images_in_view=display_settings['preview']['max_images'],
+                display_mode="grid"
             ),
             ImageDataSource(
                 "Thumbnails",

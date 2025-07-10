@@ -563,6 +563,7 @@ class ImageDataSource(DataSource):
                  display_mode: str = "centered"):  # Add display_mode parameter
         super().__init__(name)
         self.times = times
+        self.first_time = times.min()
         self.image_paths = image_paths
         self.max_images_in_view = max_images_in_view
         self.display_mode = display_mode  # Store display mode
@@ -585,10 +586,6 @@ class ImageDataSource(DataSource):
         self.thumbnail_order = []  # List to track LRU order
         self.thumbnail_locks = {}  # Dictionary to track loading status
         
-        # Preload initial thumbnails in background
-        self.preload_count = min(20, len(image_paths))
-        self.load_thread = threading.Thread(target=self._preload_thumbnails, daemon=True)
-        self.load_thread.start()
         # Track last computed thumbnail height for dynamic resizing
         self.last_img_height = None
 
@@ -619,11 +616,6 @@ class ImageDataSource(DataSource):
         tl      = self.TIMELINE_HEIGHT
         conn    = self.CONNECTION_HEIGHT
         return max(self.MIN_HEIGHT, thumb_h + top + tl + conn)
-
-    def _preload_thumbnails(self):
-        """Preload thumbnails in background thread."""
-        for i, path in enumerate(self.image_paths[:self.preload_count]):
-            self._load_thumbnail(path)
     
     def _load_thumbnail(self, path: str) -> bool:
         """Load a thumbnail into the cache with LRU eviction."""
@@ -717,17 +709,24 @@ class ImageDataSource(DataSource):
         # If we have fewer (or exactly the right number) of candidates, just return them all.
         if len(indices) <= n_images:
             return indices.copy()
-
+        
         # Extract the actual times for these indices
         times_subset = self.times[indices]
 
         if t_min is None or t_max is None:
             t_min, t_max = times_subset.min(), times_subset.max()
+        time_range = t_max - t_min
 
-
-        # Compute n_images equally spaced midpoints in [t_min, t_max]
-        # i runs 0..n_images-1; we want midpoints at (i+1)/(n_images+1)
-        targets = t_min + (np.arange(1, n_images + 1) / (n_images + 1)) * (t_max - t_min)
+        # If we have 1 image, just find the closet image to the middle time
+        if n_images == 1:
+            targets = [t_min + (t_max - t_min)/2]
+        
+        # Otherwise, find the next closest time in the sequence
+        else:
+            spacing = time_range / n_images
+            offset = np.round((t_min - self.first_time) / spacing) * spacing
+            start = self.first_time + offset
+            targets = start + np.arange(n_images+1) * spacing
 
         # For each target time, find the index in times_subset that's closest
         selected = []
@@ -780,7 +779,7 @@ class ImageDataSource(DataSource):
             buffered_indices = np.where(buffered_mask)[0]
             
             # Always show a fixed number of images (visible + buffer)
-            total_images = self.max_images_in_view + (2 * self.buffer_images)
+            total_images = self.max_images_in_view 
             
             if len(buffered_indices) > total_images:
                 # Use balanced selection for buffered images too
@@ -1324,11 +1323,12 @@ class Channel:
                         self.data_source.display_mode = "centered" if self.data_source.display_mode == "grid" else "grid"
                     return True
                 
-            # Handle click in header (select channel)
-            header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, self.header_height)
-            if header_rect.collidepoint(mouse_x, mouse_y):
-                self.selected = not self.selected
-                return True
+            # Don't allow users to select channels
+            # # Handle click in header (select channel)
+            # header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, self.header_height)
+            # if header_rect.collidepoint(mouse_x, mouse_y):
+            #     self.selected = not self.selected
+            #     return True
         
         return False
     
