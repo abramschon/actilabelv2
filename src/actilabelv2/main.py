@@ -2287,7 +2287,7 @@ class AnnotationTool:
         elif self.show_help:
             self.show_help = False
         else:
-            self.running = False
+            pass
     
     def _handle_space(self):
         """Handle space key press."""
@@ -3135,7 +3135,7 @@ class AnnotationTool:
                 "Tab: Jump to next annotation/image time",
                 "Shift+Tab: Jump to previous annotation/image time",
                 "=/+ or -: Zoom in/out",
-                "Escape: Cancel current action or quit",
+                "Escape: Cancel current action",
                 "F1: Toggle help"
             ]),
             ("Annotation", [
